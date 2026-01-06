@@ -15,7 +15,7 @@ export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
   useEffect(() => {
     const checkAuth = async () => {
       // MODE DÉVELOPPEMENT : Simuler un utilisateur admin
-      const DEV_MODE = true;
+      const DEV_MODE = false;
       
       if (DEV_MODE) {
         // Simuler un utilisateur admin pour tester l'interface
