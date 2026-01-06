@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { User, RoleChangeRequest } from "../types";
+import type { User, RoleChangeRequest } from "../types";
 import { userAPI } from "../api";
 
 export default function AdminPanel() {

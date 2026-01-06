@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { AuthUser, Pipeline } from "../types";
+import type { AuthUser, Pipeline } from "../types";
 import { pipelineAPI, userAPI } from "../api";
 import AdminPanel from "../components/AdminPanel";
 

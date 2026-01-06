@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
 import { authAPI } from "../api";
-import { AuthUser } from "../types";
+import type { AuthUser } from "../types";
 
 interface AuthGuardProps {
   children: (user: AuthUser) => ReactNode;
