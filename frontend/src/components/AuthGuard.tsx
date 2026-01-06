@@ -1,46 +1,38 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { authAPI } from "../api";
-import type { AuthUser } from "../types";
+import type { Me } from "../types";
 
 interface AuthGuardProps {
-  children: (user: AuthUser) => ReactNode;
+  children: (user: Me) => ReactNode;
   onForbidden: () => void;
 }
 
 export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      // MODE DÉVELOPPEMENT : Simuler un utilisateur admin
+    const check = async () => {
+      // DEV MODE si besoin
       const DEV_MODE = false;
-      
       if (DEV_MODE) {
-        // Simuler un utilisateur admin pour tester l'interface
-        setTimeout(() => {
-          setUser({ username: "admin_test", role: "admin" });
-          setLoading(false);
-        }, 500);
+        setUser({ id: 1, email: "dev@local", username: "dev", role: "admin" });
+        setLoading(false);
         return;
       }
 
       try {
-        // Cette API vérifie le header X-Auth-Request-User et crée l'utilisateur si nécessaire
-        const currentUser = await authAPI.checkOrCreateUser();
-        setUser({ username: currentUser.username, role: currentUser.role });
-        setLoading(false);
-      } catch (err) {
-        console.error("Auth error:", err);
-        setError(true);
-        setLoading(false);
+        const me = await authAPI.me();
+        setUser(me);
+      } catch (e) {
         onForbidden();
+      } finally {
+        setLoading(false);
       }
     };
 
-    checkAuth();
+    check();
   }, [onForbidden]);
 
   if (loading) {
@@ -54,9 +46,6 @@ export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
     );
   }
 
-  if (error || !user) {
-    return null; // La redirection est gérée par onForbidden
-  }
-
+  if (!user) return null;
   return <>{children(user)}</>;
 }

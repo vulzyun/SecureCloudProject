@@ -1,35 +1,70 @@
-import { useEffect, useState } from "react";
-import { API_BASE } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import { API_BASE, runAPI } from "../api";
+import type { RunEvent } from "../types";
 
-type RunEvent =
-  | { type: "run_start" }
-  | { type: "run_success" }
-  | { type: "run_failed"; error: string }
-  | { type: "step_start" | "step_success"; step: string }
-  | { type: "log"; step: string; line: string };
+function formatEvent(e: RunEvent): string {
+  if (e.type === "log") {
+    const step = e.step ? `[${e.step}] ` : "";
+    return `${step}${e.message ?? ""}\n`;
+  }
+  if (e.type === "step_start") return `\n▶️ START ${e.step}\n`;
+  if (e.type === "step_success") return `✅ OK ${e.step}\n`;
+  if (e.type === "run_start") return `\n🚀 RUN START\n`;
+  if (e.type === "run_success") return `\n🎉 RUN SUCCESS\n`;
+  if (e.type === "run_failed") return `\n❌ RUN FAILED: ${e.message ?? ""}\n`;
+  return `${JSON.stringify(e)}\n`;
+}
 
 export default function Run({ runId }: { runId: string }) {
   const [out, setOut] = useState<string>("");
   const [err, setErr] = useState<string | null>(null);
 
+  const sseUrl = useMemo(() => `${API_BASE}/api/runs/${runId}/events`, [runId]);
+
   useEffect(() => {
-    const es = new EventSource(`${API_BASE}/api/runs/${runId}/events`, { withCredentials: true });
+    let es: EventSource | null = null;
+    let cancelled = false;
 
-    es.onmessage = (e) => {
-      const evt = JSON.parse(e.data) as RunEvent;
-      if (evt.type === "log") setOut((p) => p + evt.line);
-      else setOut((p) => p + JSON.stringify(evt) + "\n");
+    async function start() {
+      setErr(null);
+      setOut("");
+
+      // 1) history
+      try {
+        const hist = await runAPI.history(Number(runId));
+        if (cancelled) return;
+        setOut(hist.map(formatEvent).join(""));
+      } catch (e: any) {
+        // history peut échouer si run pas trouvé
+        setErr(e.message || String(e));
+      }
+
+      // 2) SSE
+      es = new EventSource(sseUrl, { withCredentials: true });
+      es.onmessage = (e) => {
+        try {
+          const evt = JSON.parse(e.data) as RunEvent;
+          setOut((p) => p + formatEvent(evt));
+        } catch {
+          setOut((p) => p + e.data + "\n");
+        }
+      };
+      es.onerror = () => setErr("SSE error (backend/proxy/cookie ?)");
+
+    }
+
+    start();
+    return () => {
+      cancelled = true;
+      if (es) es.close();
     };
-
-    es.onerror = () => setErr("SSE error (proxy/cookie ? backend stopped ?)");
-    return () => es.close();
-  }, [runId]);
+  }, [runId, sseUrl]);
 
   return (
     <div style={{ padding: 24 }}>
       <h2>Run #{runId}</h2>
       {err && <pre style={{ color: "crimson" }}>{err}</pre>}
-      <pre style={{ background: "#111", color: "#ddd", padding: 12, height: 420, overflow: "auto" }}>
+      <pre style={{ background: "#111", color: "#ddd", padding: 12, height: 520, overflow: "auto" }}>
         {out}
       </pre>
     </div>
