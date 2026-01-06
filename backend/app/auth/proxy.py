@@ -17,7 +17,11 @@ def get_identity_from_headers(
     email = x_auth_request_email or x_forwarded_email
     username = x_auth_request_user or x_forwarded_user
 
+    # MODE DEV : Si pas de headers ET en environnement dev, utiliser un utilisateur de test
     if not email and not username:
+        if settings.env == "dev":
+            # Utilisateur admin de test pour le développement
+            return {"email": "admin@test.com", "username": "admin_test"}
         raise HTTPException(status_code=401, detail="Unauthenticated (missing oauth2-proxy headers)")
 
     if not username and email:
@@ -38,9 +42,12 @@ def get_current_user(
 
     user = session.exec(select(User).where(User.email == email)).first()
     if not user:
+        # Rôle par défaut : viewer
         role = Role.viewer
-        # bootstrap admin
-        if settings.bootstrap_admin_email and email.lower() == settings.bootstrap_admin_email.lower():
+        
+        # Bootstrap admin OU mode DEV avec admin@test.com
+        if (settings.bootstrap_admin_email and email.lower() == settings.bootstrap_admin_email.lower()) or \
+           (settings.env == "dev" and email == "admin@test.com"):
             role = Role.admin
 
         user = User(email=email, username=username, role=role)
@@ -48,8 +55,9 @@ def get_current_user(
         session.commit()
         session.refresh(user)
     else:
-        # si c'est l'admin bootstrap, on s'assure que le rôle reste admin
-        if settings.bootstrap_admin_email and email.lower() == settings.bootstrap_admin_email.lower():
+        # Si c'est l'admin bootstrap OU admin de dev, on s'assure que le rôle reste admin
+        if (settings.bootstrap_admin_email and email.lower() == settings.bootstrap_admin_email.lower()) or \
+           (settings.env == "dev" and email == "admin@test.com"):
             if user.role != Role.admin:
                 user.role = Role.admin
                 session.add(user)

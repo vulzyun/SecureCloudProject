@@ -1,6 +1,9 @@
 import type { User, Pipeline } from "./types";
 
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+// Si on accède via oauth2-proxy (port 4180), utiliser une URL relative
+// Sinon utiliser l'URL directe du backend pour le dev
+const isOAuth2Proxy = window.location.port === "4180";
+const API = isOAuth2Proxy ? "" : (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000");
 export const API_BASE = API;
 
 export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {

@@ -14,9 +14,12 @@ export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
 
   useEffect(() => {
     const check = async () => {
-      // DEV MODE pour tester l'interface
-      const DEV_MODE = true;
+      // DEV MODE : Si on n'est PAS sur le port 4180 (oauth2-proxy)
+      const isOAuth2Proxy = window.location.port === "4180";
+      const DEV_MODE = !isOAuth2Proxy;
+      
       if (DEV_MODE) {
+        // Mode développement : simuler un utilisateur admin
         setUser({ 
           id: 1, 
           email: "admin@test.com", 
@@ -29,6 +32,7 @@ export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
         return;
       }
 
+      // Mode production avec oauth2-proxy : récupérer l'utilisateur réel
       try {
         const me = await authAPI.getCurrentUser();
         setUser(me);

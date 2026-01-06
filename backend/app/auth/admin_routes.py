@@ -4,14 +4,75 @@ from ..db import get_session
 from ..models import User, Role
 from .proxy import require_role
 
-router = APIRouter(prefix="/api/admin")
+router = APIRouter(prefix="/api/admin", tags=["Admin - User Management"])
 
-@router.post("/users")
+@router.post(
+    "/users",
+    status_code=201,
+    summary="Create a new user",
+    description="""
+    Create a new user with specified username and role.
+    
+    **Permissions:** Admin only
+    
+    **Available roles:**
+    - `viewer`: Can only view pipelines and runs
+    - `dev`: Can view, create and run pipelines
+    - `admin`: Full access including user management
+    
+    **Request body:**
+    ```json
+    {
+      "username": "john_doe",
+      "role": "dev",
+      "email": "john@company.com"  // optional, auto-generated if not provided
+    }
+    ```
+    """,
+    responses={
+        201: {
+            "description": "User created successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": 2,
+                        "username": "john_doe",
+                        "email": "john_doe@local",
+                        "role": "dev",
+                        "created_at": "2026-01-06T10:30:00Z",
+                        "updated_at": "2026-01-06T10:30:00Z"
+                    }
+                }
+            }
+        },
+        400: {
+            "description": "Invalid role or user already exists",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "invalid_role": {
+                            "summary": "Invalid role",
+                            "value": {"detail": "Invalid role"}
+                        },
+                        "user_exists": {
+                            "summary": "User already exists",
+                            "value": {"detail": "User already exists"}
+                        }
+                    }
+                }
+            }
+        },
+        403: {
+            "description": "Forbidden - Admin access required"
+        }
+    }
+)
 def create_user(
     payload: dict,
     session: Session = Depends(get_session),
     _: User = Depends(require_role(Role.admin)),
 ):
+    """Create a new user (admin only)."""
     username = payload.get("username")
     role = payload.get("role", "viewer")
     
@@ -35,20 +96,86 @@ def create_user(
     session.refresh(user)
     return user
 
-@router.get("/users")
+@router.get(
+    "/users",
+    summary="List all users",
+    description="""
+    Retrieve a list of all users in the system.
+    
+    **Permissions:** Admin only
+    
+    Returns all user information including ID, username, email, role and timestamps.
+    """,
+    responses={
+        200: {
+            "description": "List of all users",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "id": 1,
+                            "username": "admin_test",
+                            "email": "admin@test.com",
+                            "role": "admin",
+                            "created_at": "2026-01-06T10:30:00Z"
+                        },
+                        {
+                            "id": 2,
+                            "username": "john_doe",
+                            "email": "john.doe@company.com",
+                            "role": "dev",
+                            "created_at": "2026-01-06T11:00:00Z"
+                        }
+                    ]
+                }
+            }
+        },
+        403: {"description": "Forbidden - Admin access required"}
+    }
+)
 def list_users(
     session: Session = Depends(get_session),
     _: User = Depends(require_role(Role.admin)),
 ):
+    """List all users (admin only)."""
     return session.exec(select(User).order_by(User.id.desc())).all()
 
-@router.put("/users/{user_id}/role")
+@router.put(
+    "/users/{user_id}/role",
+    summary="Update user role",
+    description="""
+    Change the role of an existing user.
+    
+    **Permissions:** Admin only
+    
+    **Request body:**
+    ```json
+    {
+      "role": "admin"  // viewer, dev, or admin
+    }
+    ```
+    """,
+    responses={
+        200: {
+            "description": "Role updated successfully",
+            "content": {
+                "application/json": {
+                    "example": {"ok": True, "id": 2, "role": "admin"}
+                }
+            }
+        },
+        400: {"description": "Invalid role"},
+        403: {"description": "Forbidden - Admin access required"},
+        404: {"description": "User not found"}
+    }
+)
 def set_role(
     user_id: int,
     payload: dict,
     session: Session = Depends(get_session),
     _: User = Depends(require_role(Role.admin)),
 ):
+    """Update user role (admin only)."""
     role = payload.get("role")
     if role not in {r.value for r in Role}:
         raise HTTPException(status_code=400, detail="Invalid role")

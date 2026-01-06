@@ -37,4 +37,5 @@ class Run(SQLModel, table=True):
     pipeline_id: int
     status: RunStatus = Field(default=RunStatus.pending)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    finished_at: datetime | None = Field(default=None)
     created_by: int  # user id
