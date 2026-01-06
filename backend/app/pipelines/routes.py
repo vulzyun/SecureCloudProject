@@ -20,15 +20,22 @@ def list_pipelines(
 def create_pipeline(
     payload: dict,
     session: Session = Depends(get_session),
-    user: User = Depends(require_role(Role.admin)),
+    user: User = Depends(require_role(Role.admin, Role.dev)),
 ):
     name = payload.get("name")
-    repo_url = payload.get("repo_url")
+    repo_url = payload.get("repo_url") or payload.get("github_url")
     branch = payload.get("branch") or "main"
     if not name or not repo_url:
-        raise HTTPException(status_code=400, detail="name and repo_url are required")
+        raise HTTPException(status_code=400, detail="name and repo_url/github_url are required")
 
-    p = Pipeline(name=name, repo_url=repo_url, branch=branch)
+    p = Pipeline(
+        name=name, 
+        repo_url=repo_url, 
+        github_url=repo_url,
+        branch=branch,
+        status="pending",
+        created_by=user.username
+    )
     session.add(p)
     session.commit()
     session.refresh(p)
@@ -52,6 +59,20 @@ def run_pipeline(
 
     bg.add_task(run_fake, run.id)
     return {"runId": run.id}
+
+@router.get("/runs/{run_id}/history")
+def run_history(
+    run_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Récupère l'historique des événements d'un run"""
+    run = session.get(Run, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="run not found")
+    
+    # Retourner les événements stockés (si implémenté) ou un tableau vide
+    return []
 
 @router.get("/runs/{run_id}/events")
 async def run_events(

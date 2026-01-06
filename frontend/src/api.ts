@@ -1,4 +1,4 @@
-import type { User, Pipeline, RoleChangeRequest, AuthUser, Role } from "./types";
+import type { User, Pipeline } from "./types";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 export const API_BASE = API;
@@ -14,50 +14,39 @@ export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   return (txt ? JSON.parse(txt) : null) as T;
 }
 
-// Auth
 export const authAPI = {
-  getCurrentUser: () => api<AuthUser>("/api/auth/me"),
-  checkOrCreateUser: () => api<User>("/api/auth/check-or-create", { method: "POST" }),
+  getCurrentUser: () => api<User>("/api/me"),
 };
 
-// Users / Roles
 export const userAPI = {
-  // admin
-  getAllUsers: () => api<User[]>("/api/users"),
+  getAllUsers: () => api<User[]>("/api/admin/users"),
 
-  // admin
-  updateUserRole: (username: string, role: Role) =>
-    api<User>(`/api/users/${username}/role`, {
+  createUser: (username: string, role: string, email?: string) =>
+    api<User>("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify({ username, role, email }),
+    }),
+
+  updateUserRole: (userId: number, role: string) =>
+    api<{ ok: boolean; id: number; role: string }>(`/api/admin/users/${userId}/role`, {
       method: "PUT",
       body: JSON.stringify({ role }),
     }),
-
-  // viewer -> request to become contributor
-  requestRoleChange: (username: string, requestedRole: Role, message: string) =>
-    api<RoleChangeRequest>("/api/users/role-request", {
-      method: "POST",
-      body: JSON.stringify({
-        username,
-        requested_role: requestedRole,
-        message,
-      }),
-    }),
-
-  // admin (optional, si tu l’ajoutes côté back)
-  getRoleRequests: () => api<RoleChangeRequest[]>("/api/users/role-requests"),
 };
 
-// Pipelines
 export const pipelineAPI = {
   getAllPipelines: () => api<Pipeline[]>("/api/pipelines"),
 
-  // ton back pipeline attend {name, repo_url, branch}
-  createPipeline: (name: string, repoUrl: string, branch = "main") =>
+  createPipeline: (name: string, githubUrl: string, branch = "main") =>
     api<Pipeline>("/api/pipelines", {
       method: "POST",
-      body: JSON.stringify({ name, repo_url: repoUrl, branch }),
+      body: JSON.stringify({ name, github_url: githubUrl, branch }),
     }),
 
   runPipeline: (id: number) =>
     api<{ runId: number }>(`/api/pipelines/${id}/run`, { method: "POST" }),
+};
+
+export const runAPI = {
+  history: (runId: number) => api<any[]>(`/api/runs/${runId}/history`),
 };

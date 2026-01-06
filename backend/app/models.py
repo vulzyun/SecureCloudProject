@@ -12,12 +12,19 @@ class User(SQLModel, table=True):
     email: str = Field(index=True, unique=True)
     username: str = Field(index=True)
     role: Role = Field(default=Role.viewer)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Pipeline(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
     repo_url: str
+    github_url: str = Field(default="")  # alias pour repo_url
     branch: str = "main"
+    status: str = Field(default="pending")
+    created_by: str = Field(default="")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class RunStatus(str, Enum):
     pending = "PENDING"

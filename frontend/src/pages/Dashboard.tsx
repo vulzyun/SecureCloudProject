@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import type { Me, Pipeline } from "../types";
+import type { User, Pipeline } from "../types";
 import { pipelineAPI } from "../api";
+import AdminPanel from "../components/AdminPanel";
 
-// AdminPanel + role requests supprimés pour l’instant : backend ne les a pas encore
 interface DashboardProps {
-  user: Me;
+  user: User;
 }
 
 export default function Dashboard({ user }: DashboardProps) {
@@ -64,8 +64,9 @@ export default function Dashboard({ user }: DashboardProps) {
     setSuccess(null);
 
     try {
-      const r = await pipelineAPI.runPipeline(id);
-      window.location.href = `/runs/${r.runId}`;
+      await pipelineAPI.runPipeline(id);
+      setSuccess("Pipeline lancé avec succès !");
+      await loadPipelines();
     } catch (err: any) {
       setError(err.message || "Erreur lors du lancement du pipeline");
     } finally {
@@ -121,10 +122,14 @@ export default function Dashboard({ user }: DashboardProps) {
           <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-6">
             <h3 className="font-semibold text-yellow-800 mb-2">Accès lecture seule</h3>
             <p className="text-yellow-700 text-sm">
-              Vous pouvez consulter les pipelines et les runs, mais pas créer/lancer.
+              Vous pouvez consulter les pipelines, mais pas créer/lancer. 
+              Contactez un administrateur pour obtenir le rôle Developer.
             </p>
           </div>
         )}
+
+        {/* Admin Panel */}
+        {isAdmin && <AdminPanel />}
 
         {(isDev || isAdmin) && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-8">
@@ -141,12 +146,12 @@ export default function Dashboard({ user }: DashboardProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">URL Git</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">URL GitHub</label>
                 <input
                   type="url"
                   value={repoUrl}
                   onChange={(e) => setRepoUrl(e.target.value)}
-                  placeholder="https://github.com/org/repo.git"
+                  placeholder="https://github.com/org/repo"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                   disabled={loading}
                 />
@@ -167,7 +172,7 @@ export default function Dashboard({ user }: DashboardProps) {
                 disabled={loading}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg disabled:opacity-50"
               >
-                Create Pipeline
+                {loading ? "Création..." : "Create Pipeline"}
               </button>
             </form>
           </div>
@@ -177,25 +182,21 @@ export default function Dashboard({ user }: DashboardProps) {
           <h2 className="text-xl font-bold text-gray-900 mb-4">Pipelines</h2>
 
           {pipelines.length === 0 ? (
-            <p className="text-gray-500">Aucun pipeline pour le moment</p>
+            <div className="text-center py-12">
+              <p className="text-gray-500">Aucun pipeline pour le moment</p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Nom
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Repo
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Branch
-                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">URL GitHub</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Créé par</th>
                     {(isDev || isAdmin) && (
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     )}
                   </tr>
                 </thead>
@@ -203,8 +204,14 @@ export default function Dashboard({ user }: DashboardProps) {
                   {pipelines.map((p) => (
                     <tr key={p.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{p.name}</td>
-                      <td className="px-6 py-4 text-sm text-gray-700">{p.repo_url}</td>
+                      <td className="px-6 py-4 text-sm text-blue-600 hover:underline">
+                        <a href={p.github_url} target="_blank" rel="noopener noreferrer">
+                          {p.github_url}
+                        </a>
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{p.branch}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{p.status}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{p.created_by || "N/A"}</td>
                       {(isDev || isAdmin) && (
                         <td className="px-6 py-4 whitespace-nowrap">
                           <button

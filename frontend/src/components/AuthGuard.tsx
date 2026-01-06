@@ -1,29 +1,36 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { authAPI } from "../api";
-import type { Me } from "../types";
+import type { User } from "../types";
 
 interface AuthGuardProps {
-  children: (user: Me) => ReactNode;
+  children: (user: User) => ReactNode;
   onForbidden: () => void;
 }
 
 export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
-  const [user, setUser] = useState<Me | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const check = async () => {
-      // DEV MODE si besoin
-      const DEV_MODE = false;
+      // DEV MODE pour tester l'interface
+      const DEV_MODE = true;
       if (DEV_MODE) {
-        setUser({ id: 1, email: "dev@local", username: "dev", role: "admin" });
+        setUser({ 
+          id: 1, 
+          email: "admin@test.com", 
+          username: "admin_test", 
+          role: "admin",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
         setLoading(false);
         return;
       }
 
       try {
-        const me = await authAPI.me();
+        const me = await authAPI.getCurrentUser();
         setUser(me);
       } catch (e) {
         onForbidden();

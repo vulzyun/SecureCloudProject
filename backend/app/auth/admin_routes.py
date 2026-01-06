@@ -6,6 +6,35 @@ from .proxy import require_role
 
 router = APIRouter(prefix="/api/admin")
 
+@router.post("/users")
+def create_user(
+    payload: dict,
+    session: Session = Depends(get_session),
+    _: User = Depends(require_role(Role.admin)),
+):
+    username = payload.get("username")
+    role = payload.get("role", "viewer")
+    
+    if not username:
+        raise HTTPException(status_code=400, detail="Username is required")
+    
+    if role not in {r.value for r in Role}:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    
+    # Vérifier si l'utilisateur existe déjà
+    existing = session.exec(select(User).where(User.username == username)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="User already exists")
+    
+    # Créer un email basé sur le username
+    email = payload.get("email", f"{username}@local")
+    
+    user = User(email=email, username=username, role=Role(role))
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
 @router.get("/users")
 def list_users(
     session: Session = Depends(get_session),
