@@ -1,13 +1,20 @@
-import Login from "./pages/Login";
-import Pipelines from "./pages/Pipelines";
-import Run from "./pages/Run";
+import { useState } from "react";
+import AuthGuard from "./components/AuthGuard";
+import Dashboard from "./pages/Dashboard";
+import Forbidden from "./pages/Forbidden";
 
 export default function App() {
-  const path = window.location.pathname;
+  const [isForbidden, setIsForbidden] = useState(false);
 
-  if (path === "/") return <Login />;
-  if (path === "/pipelines") return <Pipelines />;
-  if (path.startsWith("/runs/")) return <Run runId={path.split("/")[2]} />;
-  return <div style={{ padding: 24 }}>404</div>;
+  if (isForbidden) {
+    return <Forbidden />;
+  }
+
+  return (
+    <AuthGuard onForbidden={() => setIsForbidden(true)}>
+      {(user) => <Dashboard user={user} />}
+    </AuthGuard>
+  );
 }
+
 
