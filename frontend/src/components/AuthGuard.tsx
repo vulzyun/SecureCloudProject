@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { authAPI } from "../api";
-import type { AuthUser } from "../types";
+import type { User } from "../types";
 
 interface AuthGuardProps {
-  children: (user: AuthUser) => ReactNode;
+  children: (user: User) => ReactNode;
   onForbidden: () => void;
 }
 
 export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -21,7 +21,14 @@ export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
       if (DEV_MODE) {
         // Simuler un utilisateur admin pour tester l'interface
         setTimeout(() => {
-          setUser({ username: "admin_test", role: "admin" });
+          setUser({ 
+            id: 1,
+            email: "admin@test.com",
+            username: "admin_test", 
+            role: "admin",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
           setLoading(false);
         }, 500);
         return;
@@ -29,8 +36,8 @@ export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
 
       try {
         // Cette API vérifie le header X-Auth-Request-User et crée l'utilisateur si nécessaire
-        const currentUser = await authAPI.checkOrCreateUser();
-        setUser({ username: currentUser.username, role: currentUser.role });
+        const currentUser = await authAPI.getCurrentUser();
+        setUser(currentUser);
         setLoading(false);
       } catch (err) {
         console.error("Auth error:", err);

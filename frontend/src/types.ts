@@ -1,7 +1,8 @@
-export type Role = "viewer" | "contributor" | "admin";
+export type Role = "viewer" | "dev" | "admin";
 
 export interface User {
   id: number;
+  email: string;
   username: string;
   role: Role;
   created_at: string;
@@ -11,24 +12,11 @@ export interface User {
 export interface Pipeline {
   id: number;
   name: string;
+  repo_url: string;
   github_url: string;
+  branch: string;
   status: "pending" | "running" | "completed" | "failed";
   created_by: string;
   created_at: string;
   updated_at: string;
-}
-
-export interface RoleChangeRequest {
-  id: number;
-  username: string;
-  requested_role: Role;
-  status: "pending" | "approved" | "rejected";
-  created_at: string;
-  reviewed_by?: string;
-  reviewed_at?: string;
-}
-
-export interface AuthUser {
-  username: string;
-  role: Role;
 }

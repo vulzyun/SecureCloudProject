@@ -1,4 +1,4 @@
-import type { User, Pipeline, RoleChangeRequest, AuthUser } from "./types";
+import type { User, Pipeline } from "./types";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
@@ -17,39 +17,26 @@ export const API_BASE = API;
 // Auth & User Management
 export const authAPI = {
   // Récupère l'utilisateur courant basé sur le header X-Auth-Request-User
-  getCurrentUser: () => api<AuthUser>("/api/auth/me"),
-  
-  // Vérifie si l'utilisateur existe dans la BD, sinon le crée avec rôle viewer
-  checkOrCreateUser: () => api<User>("/api/auth/check-or-create", { method: "POST" }),
+  getCurrentUser: () => api<User>("/api/me"),
 };
 
 // User & Role Management
 export const userAPI = {
   // Liste tous les utilisateurs (admin only)
-  getAllUsers: () => api<User[]>("/api/users"),
+  getAllUsers: () => api<User[]>("/api/admin/users"),
+  
+  // Crée un nouvel utilisateur (admin only)
+  createUser: (username: string, role: string, email?: string) =>
+    api<User>("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify({ username, role, email }),
+    }),
   
   // Met à jour le rôle d'un utilisateur (admin only)
-  updateUserRole: (username: string, role: string) =>
-    api<User>(`/api/users/${username}/role`, {
+  updateUserRole: (userId: number, role: string) =>
+    api<{ ok: boolean; id: number; role: string }>(`/api/admin/users/${userId}/role`, {
       method: "PUT",
       body: JSON.stringify({ role }),
-    }),
-  
-  // Demande un changement de rôle (viewer uniquement)
-  requestRoleChange: (requestedRole: string) =>
-    api<RoleChangeRequest>("/api/users/role-request", {
-      method: "POST",
-      body: JSON.stringify({ requested_role: requestedRole }),
-    }),
-  
-  // Liste les demandes de changement de rôle (admin only)
-  getRoleRequests: () => api<RoleChangeRequest[]>("/api/users/role-requests"),
-  
-  // Approuve/rejette une demande de changement de rôle (admin only)
-  reviewRoleRequest: (requestId: number, approved: boolean) =>
-    api<RoleChangeRequest>(`/api/users/role-requests/${requestId}`, {
-      method: "PUT",
-      body: JSON.stringify({ approved }),
     }),
 };
 
@@ -58,7 +45,7 @@ export const pipelineAPI = {
   // Liste tous les pipelines
   getAllPipelines: () => api<Pipeline[]>("/api/pipelines"),
   
-  // Crée un nouveau pipeline (contributor & admin)
+  // Crée un nouveau pipeline (dev & admin)
   createPipeline: (githubUrl: string, name: string) =>
     api<Pipeline>("/api/pipelines", {
       method: "POST",
@@ -68,8 +55,8 @@ export const pipelineAPI = {
   // Obtient un pipeline par ID
   getPipeline: (id: number) => api<Pipeline>(`/api/pipelines/${id}`),
   
-  // Lance un pipeline (contributor & admin)
+  // Lance un pipeline (dev & admin)
   runPipeline: (id: number) =>
-    api<Pipeline>(`/api/pipelines/${id}/run`, { method: "POST" }),
+    api<{ runId: number }>(`/api/pipelines/${id}/run`, { method: "POST" }),
 };
 

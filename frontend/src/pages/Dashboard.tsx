@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import type { AuthUser, Pipeline } from "../types";
-import { pipelineAPI, userAPI } from "../api";
+import type { User, Pipeline } from "../types";
+import { pipelineAPI } from "../api";
 import AdminPanel from "../components/AdminPanel";
 
 interface DashboardProps {
-  user: AuthUser;
+  user: User;
 }
 
 export default function Dashboard({ user }: DashboardProps) {
@@ -16,7 +16,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const [success, setSuccess] = useState<string | null>(null);
 
   const isViewer = user.role === "viewer";
-  const isContributor = user.role === "contributor";
+  const isDev = user.role === "dev";
   const isAdmin = user.role === "admin";
 
   useEffect(() => {
@@ -72,28 +72,11 @@ export default function Dashboard({ user }: DashboardProps) {
     }
   };
 
-  const handleRequestRoleChange = async () => {
-    if (!window.confirm("Voulez-vous demander à devenir contributeur ?")) return;
-
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      await userAPI.requestRoleChange("contributor");
-      setSuccess("Demande de changement de rôle envoyée aux administrateurs !");
-    } catch (err: any) {
-      setError(err.message || "Erreur lors de l'envoi de la demande");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const getRoleColor = (role: string) => {
     switch (role) {
       case "admin":
         return "bg-red-100 text-red-800 border-red-200";
-      case "contributor":
+      case "dev":
         return "bg-blue-100 text-blue-800 border-blue-200";
       case "viewer":
         return "bg-gray-100 text-gray-800 border-gray-200";
@@ -175,24 +158,17 @@ export default function Dashboard({ user }: DashboardProps) {
               </svg>
               <div className="flex-1">
                 <h3 className="font-semibold text-yellow-800 mb-2">Accès limité</h3>
-                <p className="text-yellow-700 text-sm mb-4">
+                <p className="text-yellow-700 text-sm">
                   Vous avez actuellement un accès en lecture seule. Pour créer et lancer des pipelines,
-                  demandez le rôle de contributeur.
+                  contactez un administrateur pour obtenir le rôle Developer.
                 </p>
-                <button
-                  onClick={handleRequestRoleChange}
-                  disabled={loading}
-                  className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Demander le rôle Contributeur
-                </button>
               </div>
             </div>
           </div>
         )}
 
         {/* Create Pipeline Form */}
-        {(isContributor || isAdmin) && (
+        {(isDev || isAdmin) && (
           <div className="bg-white rounded-lg shadow-md p-6 mb-8">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Créer un nouveau pipeline</h2>
             <form onSubmit={handleCreatePipeline} className="space-y-4">
@@ -303,7 +279,7 @@ export default function Dashboard({ user }: DashboardProps) {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Date
                     </th>
-                    {(isContributor || isAdmin) && (
+                    {(isDev || isAdmin) && (
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Actions
                       </th>
@@ -343,7 +319,7 @@ export default function Dashboard({ user }: DashboardProps) {
                           {new Date(pipeline.created_at).toLocaleDateString()}
                         </div>
                       </td>
-                      {(isContributor || isAdmin) && (
+                      {(isDev || isAdmin) && (
                         <td className="px-6 py-4 whitespace-nowrap">
                           <button
                             onClick={() => handleRunPipeline(pipeline.id)}
