@@ -140,7 +140,7 @@ export default function AdminPanel() {
         <>
           {/* Update Role Form */}
           <form onSubmit={handleUpdateRole} className="mb-6 bg-gray-50 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-900 mb-4">Attribuer un rôle</h3>
+            <h3 className="font-semibold text-gray-900 mb-4">Attribuer un test</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">

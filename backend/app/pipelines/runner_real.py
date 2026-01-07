@@ -259,12 +259,7 @@ async def run_real_pipeline(run_id: int):
             await _step_start(run_id, step, pipeline.id)
 
             rm_cmd = f"docker rm -f {container_name} 2>/dev/null || true"
-            run_cmd = (
-                f"docker run -d --restart unless-stopped "
-                f"--name {container_name} "
-                f"-p 8080:8080 "
-                f"{image_tag}"
-            )
+            run_cmd = f"docker run {image_tag}"
 
             await _log(run_id, step, f"Stopping old container: {container_name}", pipeline.id)
             for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, rm_cmd):

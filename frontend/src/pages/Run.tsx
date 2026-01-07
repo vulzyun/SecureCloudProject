@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { API_BASE, runAPI } from "../api";
 import type { RunEvent } from "../types";
 
@@ -16,6 +17,7 @@ function formatEvent(e: RunEvent): string {
 }
 
 export default function Run({ runId }: { runId: string }) {
+  const navigate = useNavigate();
   const [out, setOut] = useState<string>("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -62,7 +64,23 @@ export default function Run({ runId }: { runId: string }) {
 
   return (
     <div style={{ padding: 24 }}>
-      <h2>Run #{runId}</h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <h2>Run #{runId}</h2>
+        <button
+          onClick={() => navigate(`/logs/${runId}`)}
+          style={{
+            backgroundColor: "#3b82f6",
+            color: "white",
+            padding: "8px 16px",
+            borderRadius: "6px",
+            border: "none",
+            cursor: "pointer",
+            fontWeight: "600"
+          }}
+        >
+          📄 Voir les logs détaillés
+        </button>
+      </div>
       {err && <pre style={{ color: "crimson" }}>{err}</pre>}
       <pre style={{ background: "#111", color: "#ddd", padding: 12, height: 520, overflow: "auto" }}>
         {out}

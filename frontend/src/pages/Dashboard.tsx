@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import type { User, Pipeline } from "../types";
 import { pipelineAPI } from "../api";
 import AdminPanel from "../components/AdminPanel";
@@ -8,6 +9,7 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ user }: DashboardProps) {
+  const navigate = useNavigate();
   const [repoUrl, setRepoUrl] = useState("");
   const [pipelineName, setPipelineName] = useState("");
   const [branch, setBranch] = useState("main");
@@ -198,6 +200,7 @@ export default function Dashboard({ user }: DashboardProps) {
                     {(isDev || isAdmin) && (
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                     )}
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Voir les logs</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -223,6 +226,14 @@ export default function Dashboard({ user }: DashboardProps) {
                           </button>
                         </td>
                       )}
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <button
+                          onClick={() => navigate(`/logs/${p.id}`)}
+                          className="bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium py-2 px-4 rounded-lg"
+                        >
+                         Voir les logs
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

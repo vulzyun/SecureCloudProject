@@ -52,4 +52,12 @@ export const pipelineAPI = {
 
 export const runAPI = {
   history: (runId: number) => api<any[]>(`/api/runs/${runId}/history`),
+  
+  getLogs: async (runId: number): Promise<string> => {
+    const res = await fetch(`${API}/api/runs/${runId}/logs`, {
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.text();
+  },
 };

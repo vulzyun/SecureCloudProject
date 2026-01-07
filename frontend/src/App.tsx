@@ -4,6 +4,7 @@ import AuthGuard from "./components/AuthGuard";
 import Dashboard from "./pages/Dashboard";
 import Forbidden from "./pages/Forbidden";
 import Run from "./pages/Run";
+import LogViewer from "./pages/LogViewer";
 
 function RunRoute() {
   const { runId } = useParams();
@@ -23,6 +24,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard user={user} />} />
             <Route path="/runs/:runId" element={<RunRoute />} />
+            <Route path="/logs/:runId" element={<LogViewer />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

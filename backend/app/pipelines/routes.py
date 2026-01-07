@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
+from fastapi.responses import PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 from sqlmodel import Session, select
+from pathlib import Path
 from ..db import get_session
 from ..models import Pipeline, Run, RunStatus, User, Role
 from ..auth.proxy import get_current_user, require_role
@@ -281,3 +283,65 @@ async def run_events(
             yield {"event": "message", "data": evt}
 
     return EventSourceResponse(event_gen())
+
+
+@router.get(
+    "/runs/{run_id}/logs",
+    response_class=PlainTextResponse,
+    summary="Get run logs from file",
+    description="""
+    Retrieve the complete log file content for a specific run.
+    
+    **Permissions:** Any authenticated user
+    
+    This endpoint reads the log file created during pipeline execution.
+    The file is located at: `~/.cicd/workspaces/pipeline-{pipeline_id}/logs/run-{run_id}.log`
+    
+    **Usage:**
+    - Poll this endpoint to get updated logs during execution
+    - Display logs after run completion
+    - Download logs for debugging
+    """,
+    responses={
+        200: {
+            "description": "Log file content as plain text",
+            "content": {
+                "text/plain": {
+                    "example": "=== Pipeline Run 1 - 2026-01-06T10:30:00 ===\n\n>>> STEP: checkout\n[checkout] Cloning repository...\n✓ STEP COMPLETED: checkout\n"
+                }
+            }
+        },
+        404: {
+            "description": "Run not found or log file does not exist",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Log file not found"}
+                }
+            }
+        }
+    }
+)
+def get_run_logs(
+    run_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    """Get log file content for a run."""
+    # Get run to find pipeline_id
+    run = session.get(Run, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Build log file path
+    log_file = Path.home() / ".cicd" / "workspaces" / f"pipeline-{run.pipeline_id}" / "logs" / f"run-{run_id}.log"
+    
+    if not log_file.exists():
+        raise HTTPException(status_code=404, detail="Log file not found")
+    
+    # Read and return log content
+    try:
+        with open(log_file, 'r') as f:
+            content = f.read()
+        return content
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading log file: {str(e)}")
