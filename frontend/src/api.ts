@@ -1,8 +1,12 @@
 import type { User, Pipeline } from "./types";
 
-const isOAuth2Proxy = window.location.port === "4180";
-const API = isOAuth2Proxy ? "" : (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000");
+// Détection : si on est chargé via oauth2-proxy, window.location.hostname sera celui d'oauth2-proxy
+// On vérifie aussi si le document a été chargé avec des headers oauth2-proxy
+const isViaProxy = window.location.port === "4180" || window.location.hostname !== "localhost";
+const API = isViaProxy ? "" : (import.meta.env.VITE_API_URL || "http://localhost:8000");
 export const API_BASE = API;
+
+console.log(`[API] isViaProxy: ${isViaProxy}, API: "${API}", port: ${window.location.port}`);
 
 export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API}${path}`, {
@@ -12,9 +16,23 @@ export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
     headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
   });
 
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`API Error [${res.status}]:`, text);
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+
   const txt = await res.text();
-  return (txt ? JSON.parse(txt) : null) as T;
+  
+  // Vérifier que la réponse est bien du JSON
+  if (!txt) return null as T;
+  
+  try {
+    return JSON.parse(txt) as T;
+  } catch (e) {
+    console.error("Failed to parse JSON:", txt.substring(0, 100));
+    throw new Error("Invalid JSON response from server");
+  }
 }
 
 export const authAPI = {

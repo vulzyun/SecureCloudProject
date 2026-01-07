@@ -14,6 +14,7 @@ allowed_origins = [
     "http://localhost:4180",      # oauth2-proxy
     "http://127.0.0.1:5173",      # Frontend Vite via 127.0.0.1
     "http://127.0.0.1:4180",      # oauth2-proxy via 127.0.0.1
+    "http://0.0.0.0:5173",        # Vite sur toutes les interfaces
 ]
 
 app.add_middleware(
