@@ -14,29 +14,28 @@ export default function AuthGuard({ children, onForbidden }: AuthGuardProps) {
 
   useEffect(() => {
     const check = async () => {
-      // DEV MODE : Si on n'est PAS sur le port 4180 (oauth2-proxy)
-      const isOAuth2Proxy = window.location.port === "4180";
-      const DEV_MODE = !isOAuth2Proxy;
-      
-      if (DEV_MODE) {
-        // Mode développement : simuler un utilisateur admin
-        setUser({ 
-          id: 1, 
-          email: "admin@test.com", 
-          username: "admin_test", 
-          role: "admin",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-        setLoading(false);
-        return;
-      }
-
-      // Mode production avec oauth2-proxy : récupérer l'utilisateur réel
       try {
+        // Toujours appeler l'API pour récupérer l'utilisateur réel
         const me = await authAPI.getCurrentUser();
-        setUser(me);
+        
+        // Vérifier que la réponse contient bien les champs attendus
+        if (!me || !me.username || !me.role) {
+          console.error("Invalid user response:", me);
+          onForbidden();
+          return;
+        }
+        
+        // Stocker l'utilisateur avec toutes les infos de l'API
+        setUser({
+          id: me.id,
+          email: me.email,
+          username: me.username,
+          role: me.role,
+          created_at: me.created_at,
+          updated_at: me.updated_at
+        });
       } catch (e) {
+        console.error("Auth error:", e);
         onForbidden();
       } finally {
         setLoading(false);

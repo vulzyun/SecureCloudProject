@@ -92,19 +92,16 @@ def _workspace(pipeline_id: int) -> Path:
 
 def _git_checkout(repo_url: str, branch: str, ws: Path) -> None:
     """Ensure workspace contains up-to-date checkout of repo@branch."""
-    if ws.exists() and (ws / ".git").exists():
-        for _ in _run_cmd(["git", "fetch", "--all", "--prune"], cwd=str(ws)):
-            pass
-        for _ in _run_cmd(["git", "checkout", branch], cwd=str(ws)):
-            pass
-        for _ in _run_cmd(["git", "reset", "--hard", f"origin/{branch}"], cwd=str(ws)):
-            pass
-    else:
-        if ws.exists():
-            shutil.rmtree(ws)
-        ws.parent.mkdir(parents=True, exist_ok=True)
-        for _ in _run_cmd(["git", "clone", "--branch", branch, "--single-branch", repo_url, str(ws)]):
-            pass
+    # Si le dossier existe, on le supprime complètement pour repartir propre
+    if ws.exists():
+        shutil.rmtree(ws)
+    
+    # Créer le dossier parent
+    ws.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Clone frais
+    for _ in _run_cmd(["git", "clone", "--branch", branch, "--single-branch", repo_url, str(ws)]):
+        pass
 
 
 def _ssh_exec(user: str, host: str, port: int, remote_cmd: str) -> Iterable[str]:
@@ -244,6 +241,50 @@ async def run_real_pipeline(run_id: int):
             await _log(run_id, step, "✅ Docker image built successfully!", pipeline.id)
             await _step_ok(run_id, step, pipeline.id)
 
+            # STEP: cleanup (AVANT d'envoyer la nouvelle image)
+            # STEP: cleanup (AVANT d'envoyer la nouvelle image)
+            step = "cleanup_old_deploy"
+            await _step_start(run_id, step, pipeline.id)
+
+            container_name = sanitized_name
+            app_repo = sanitized_name
+
+            # Nettoyer TOUT : TOUS les conteneurs + images de cette app
+            cleanup_cmd = f"""
+            set -e
+
+            APP_REPO="{app_repo}"
+            CONTAINER_NAME="{container_name}"
+
+            echo "[cleanup] Stopping ALL running containers..."
+            
+            # 1. Arrêter TOUS les conteneurs en cours d'exécution (pas seulement ceux de l'app)
+            RUNNING_CONTAINERS=$(docker ps -q)
+            if [ -n "$RUNNING_CONTAINERS" ]; then
+                echo "[cleanup] Found running containers, stopping them..."
+                docker stop $RUNNING_CONTAINERS 2>/dev/null || true
+                docker rm -f $RUNNING_CONTAINERS 2>/dev/null || true
+                echo "[cleanup] All running containers stopped"
+            else
+                echo "[cleanup] No running containers found"
+            fi
+
+            # 2. Nettoyer aussi les conteneurs arrêtés de notre app
+            echo "[cleanup] Removing stopped containers for: $CONTAINER_NAME"
+            docker ps -aq --filter "name=$CONTAINER_NAME" | xargs -r docker rm -f 2>/dev/null || true
+
+            # 3. Supprimer TOUTES les images de cette app
+            echo "[cleanup] Removing all images for: $APP_REPO"
+            docker images "$APP_REPO" --format '{{.ID}}' | xargs -r docker rmi -f 2>/dev/null || true
+
+            echo "[cleanup] Done - all containers stopped, ready for fresh deploy"
+            """.strip()
+
+            await _log(run_id, step, f"Stopping ALL containers and cleaning images for: {app_repo}", pipeline.id)
+            for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, cleanup_cmd):
+                await _log(run_id, step, line, pipeline.id)
+            await _step_ok(run_id, step, pipeline.id)
+            
             # STEP: ship image (ssh)
             step = "ship_image_ssh"
             await _step_start(run_id, step, pipeline.id)
@@ -258,55 +299,13 @@ async def run_real_pipeline(run_id: int):
             step = "deploy_run"
             await _step_start(run_id, step, pipeline.id)
 
-            # Repo d'image (= "app") et tag à conserver
-            app_repo = sanitized_name  # ex: "securecloud-pipeline"
-            keep_tag = image_tag  # ex: "securecloud-pipeline:run-42"
-            container_name = sanitized_name  # nom stable du conteneur
-            app_port = 8080  # port exposé sur la machine prod
-            container_port = 8080  # port dans le conteneur (à adapter si besoin)
-
-            # 1) Nettoyage ciblé sur la prod : stop/rm conteneurs + rm images (sauf keep_tag)
-            cleanup_cmd = f"""
-            set -e
-
-            APP_REPO="{app_repo}"
-            KEEP_TAG="{keep_tag}"
-
-            echo "[cleanup] Keep tag: $KEEP_TAG"
-
-            # ID de l'image à garder (celle qu'on vient de docker load)
-            KEEP_ID=$(docker image inspect -f '{{{{.Id}}}}' "$KEEP_TAG" 2>/dev/null || true)
-            echo "[cleanup] Keep image id: $KEEP_ID"
-
-            # Stop & remove tous les conteneurs créés depuis APP_REPO (ton app uniquement)
-            docker ps -q --filter "ancestor=$APP_REPO" | xargs -r docker stop
-            docker ps -aq --filter "ancestor=$APP_REPO" | xargs -r docker rm -f
-
-            # Au cas où un conteneur avec le même nom existe encore
-            docker rm -f "{container_name}" 2>/dev/null || true
-
-            # Supprimer toutes les images APP_REPO sauf l'image KEEP_TAG
-            if [ -n "$KEEP_ID" ]; then
-              docker images "$APP_REPO" --format '{{{{.ID}}}}' | grep -v "$KEEP_ID" | xargs -r docker rmi -f
-            else
-              # si KEEP_TAG pas trouvé pour une raison quelconque, on évite de tout casser
-              echo "[cleanup] WARNING: keep image not found, skipping image cleanup"
-            fi
-
-            echo "[cleanup] done"
-            """.strip()
-
-            await _log(run_id, step, f"Cleaning previous containers/images for app repo: {app_repo}", pipeline.id)
-            for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, cleanup_cmd):
-                await _log(run_id, step, line, pipeline.id)
-
-            # 2) Run conteneur : detach + name + ports + restart
+            # Lancer le nouveau conteneur
             run_cmd = (
                 f"docker run -d "
                 f"--name {container_name} "
                 f"--restart unless-stopped "
-                f"-p {app_port}:{container_port} "
-                f"{keep_tag}"
+                f"-p 8080:8080 "
+                f"{image_tag}"
             )
 
             await _log(run_id, step, f"Starting new container: {container_name}", pipeline.id)
