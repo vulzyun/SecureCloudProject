@@ -19,16 +19,22 @@ from .events import bus
 # Global dict to store log file paths for each run
 _log_files = {}
 
-def _get_log_file(pipeline_id: int, run_id: int) -> Path:
+def _sanitize_name(name: str) -> str:
+    """Sanitize pipeline name for use in file paths and Docker."""
+    return name.lower().replace(" ", "-").replace("_", "-")
+
+def _get_log_file(pipeline_name: str, run_id: int) -> Path:
     """Get or create log file path for a run."""
     if run_id not in _log_files:
-        log_dir = Path.home() / ".cicd" / "workspaces" / f"pipeline-{pipeline_id}" / "logs"
+        sanitized_name = _sanitize_name(pipeline_name)
+        log_dir = Path.home() / ".cicd" / "workspaces" / sanitized_name / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / f"run-{run_id}.log"
+        # Utiliser le nom du pipeline comme nom de fichier
+        log_file = log_dir / f"{sanitized_name}.log"
         _log_files[run_id] = log_file
-        # Initialize log file with header
+        # Initialize log file with header (écrase le fichier précédent)
         with open(log_file, 'w') as f:
-            f.write(f"=== Pipeline Run {run_id} - {datetime.utcnow().isoformat()} ===\n\n")
+            f.write(f"=== Pipeline: {pipeline_name} | Run {run_id} | {datetime.utcnow().isoformat()} ===\n\n")
     return _log_files[run_id]
 
 def _write_to_log(log_file: Path, message: str):
@@ -38,26 +44,26 @@ def _write_to_log(log_file: Path, message: str):
     with open(log_file, 'a') as f:
         f.write(f"{message}\n")
 
-async def _emit(run_id: int, evt: dict, pipeline_id: int = None):
+async def _emit(run_id: int, evt: dict, pipeline_name: str = None):
     """Publish event to SSE bus."""
     await bus.publish(run_id, evt)
 
-async def _step_start(run_id: int, step: str, pipeline_id: int = None):
-    if pipeline_id:
-        log_file = _get_log_file(pipeline_id, run_id)
+async def _step_start(run_id: int, step: str, pipeline_name: str = None):
+    if pipeline_name:
+        log_file = _get_log_file(pipeline_name, run_id)
         _write_to_log(log_file, f"\n>>> STEP: {step}")
     await _emit(run_id, {"type": "step_start", "step": step})
 
-async def _step_ok(run_id: int, step: str, pipeline_id: int = None):
-    if pipeline_id:
-        log_file = _get_log_file(pipeline_id, run_id)
+async def _step_ok(run_id: int, step: str, pipeline_name: str = None):
+    if pipeline_name:
+        log_file = _get_log_file(pipeline_name, run_id)
         _write_to_log(log_file, f"✓ STEP COMPLETED: {step}")
     await _emit(run_id, {"type": "step_success", "step": step})
 
-async def _log(run_id: int, step: str, line: str, pipeline_id: int = None):
+async def _log(run_id: int, step: str, line: str, pipeline_name: str = None):
     message = line.rstrip("\n")
-    if pipeline_id:
-        log_file = _get_log_file(pipeline_id, run_id)
+    if pipeline_name:
+        log_file = _get_log_file(pipeline_name, run_id)
         _write_to_log(log_file, f"[{step}] {message}")
     await _emit(run_id, {"type": "log", "step": step, "message": message})
 
@@ -84,15 +90,17 @@ def _run_cmd(cmd: list[str], cwd: Optional[str] = None) -> Iterable[str]:
         raise RuntimeError(f"Command failed ({rc}): {' '.join(cmd)}")
 
 
-def _workspace(pipeline_id: int) -> Path:
+def _workspace(pipeline_name: str) -> Path:
+    """Get workspace path for a pipeline. Workspace is recreated on each run."""
     base = Path.home() / ".cicd" / "workspaces"
     base.mkdir(parents=True, exist_ok=True)
-    return base / f"pipeline-{pipeline_id}"
+    sanitized_name = _sanitize_name(pipeline_name)
+    return base / sanitized_name
 
 
 def _git_checkout(repo_url: str, branch: str, ws: Path) -> None:
     """Ensure workspace contains up-to-date checkout of repo@branch."""
-    # Si le dossier existe, on le supprime complètement pour repartir propre
+    # Supprimer complètement le workspace s'il existe (pour repartir propre à chaque run)
     if ws.exists():
         shutil.rmtree(ws)
     
@@ -189,62 +197,61 @@ async def run_real_pipeline(run_id: int):
         session.commit()
 
         # Sanitize pipeline name for Docker (no spaces, lowercase)
-        sanitized_name = pipeline.name.lower().replace(" ", "-")
+        sanitized_name = _sanitize_name(pipeline.name)
         image_tag = f"{sanitized_name}:run-{run_id}"
         container_name = sanitized_name
 
         try:
-            await _emit(run_id, {"type": "run_start"}, pipeline.id)
+            await _emit(run_id, {"type": "run_start"}, pipeline.name)
 
             # STEP: checkout
             step = "checkout"
-            await _step_start(run_id, step, pipeline.id)
-            ws = _workspace(pipeline.id)
-            await _log(run_id, step, f"Workspace: {ws}", pipeline.id)
-            await _log(run_id, step, f"Cloning {pipeline.github_url} ({pipeline.branch})", pipeline.id)
+            await _step_start(run_id, step, pipeline.name)
+            ws = _workspace(pipeline.name)
+            await _log(run_id, step, f"Workspace: {ws}", pipeline.name)
+            await _log(run_id, step, f"Cloning {pipeline.github_url} ({pipeline.branch})", pipeline.name)
             _git_checkout(pipeline.github_url, pipeline.branch, ws)
-            await _step_ok(run_id, step, pipeline.id)
+            await _step_ok(run_id, step, pipeline.name)
 
             # STEP: tests Maven
             step = "maven_tests"
-            await _step_start(run_id, step, pipeline.id)
+            await _step_start(run_id, step, pipeline.name)
             
             demo_dir = ws / "demo"
             if not demo_dir.exists():
-                await _log(run_id, step, "No demo directory found, skipping tests", pipeline.id)
-                await _step_ok(run_id, step, pipeline.id)
+                await _log(run_id, step, "No demo directory found, skipping tests", pipeline.name)
+                await _step_ok(run_id, step, pipeline.name)
             else:
                 # Build with Maven
-                await _log(run_id, step, "Building with Maven (./mvnw -B clean compile)...", pipeline.id)
+                await _log(run_id, step, "Building with Maven (./mvnw -B clean compile)...", pipeline.name)
                 for line in _run_cmd(["./mvnw", "-B", "clean", "compile"], cwd=str(demo_dir)):
-                    await _log(run_id, step, line, pipeline.id)
+                    await _log(run_id, step, line, pipeline.name)
                 
                 # Run tests
-                await _log(run_id, step, "Running tests (./mvnw -B test)...", pipeline.id)
+                await _log(run_id, step, "Running tests (./mvnw -B test)...", pipeline.name)
                 for line in _run_cmd(["./mvnw", "-B", "test"], cwd=str(demo_dir)):
-                    await _log(run_id, step, line, pipeline.id)
+                    await _log(run_id, step, line, pipeline.name)
                 
-                await _log(run_id, step, "✅ Tests passed successfully!", pipeline.id)
-                await _step_ok(run_id, step, pipeline.id)
+                await _log(run_id, step, "✅ Tests passed successfully!", pipeline.name)
+                await _step_ok(run_id, step, pipeline.name)
 
             # STEP: docker build
             step = "docker_build"
-            await _step_start(run_id, step, pipeline.id)
+            await _step_start(run_id, step, pipeline.name)
             
             build_context = str(demo_dir) if demo_dir.exists() else str(ws)
-            await _log(run_id, step, f"Building Docker image: {image_tag}", pipeline.id)
-            await _log(run_id, step, f"Build context: {build_context}", pipeline.id)
+            await _log(run_id, step, f"Building Docker image: {image_tag}", pipeline.name)
+            await _log(run_id, step, f"Build context: {build_context}", pipeline.name)
             
             for line in _run_cmd(["docker", "build", "-t", image_tag, build_context]):
-                await _log(run_id, step, line, pipeline.id)
+                await _log(run_id, step, line, pipeline.name)
             
-            await _log(run_id, step, "✅ Docker image built successfully!", pipeline.id)
-            await _step_ok(run_id, step, pipeline.id)
+            await _log(run_id, step, "✅ Docker image built successfully!", pipeline.name)
+            await _step_ok(run_id, step, pipeline.name)
 
             # STEP: cleanup (AVANT d'envoyer la nouvelle image)
-            # STEP: cleanup (AVANT d'envoyer la nouvelle image)
             step = "cleanup_old_deploy"
-            await _step_start(run_id, step, pipeline.id)
+            await _step_start(run_id, step, pipeline.name)
 
             container_name = sanitized_name
             app_repo = sanitized_name
@@ -280,24 +287,24 @@ async def run_real_pipeline(run_id: int):
             echo "[cleanup] Done - all containers stopped, ready for fresh deploy"
             """.strip()
 
-            await _log(run_id, step, f"Stopping ALL containers and cleaning images for: {app_repo}", pipeline.id)
+            await _log(run_id, step, f"Stopping ALL containers and cleaning images for: {app_repo}", pipeline.name)
             for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, cleanup_cmd):
-                await _log(run_id, step, line, pipeline.id)
-            await _step_ok(run_id, step, pipeline.id)
-            
+                await _log(run_id, step, line, pipeline.name)
+            await _step_ok(run_id, step, pipeline.name)
+
             # STEP: ship image (ssh)
             step = "ship_image_ssh"
-            await _step_start(run_id, step, pipeline.id)
-            await _log(run_id, step, f"📦 Shipping Docker image to {DEPLOY_USER}@{DEPLOY_HOST}", pipeline.id)
-            await _log(run_id, step, "This may take several minutes depending on image size...", pipeline.id)
+            await _step_start(run_id, step, pipeline.name)
+            await _log(run_id, step, f"📦 Shipping Docker image to {DEPLOY_USER}@{DEPLOY_HOST}", pipeline.name)
+            await _log(run_id, step, "This may take several minutes depending on image size...", pipeline.name)
             
             _docker_save_and_load_over_ssh(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, image_tag)
-            await _log(run_id, step, f"✅ Image {image_tag} successfully transferred!", pipeline.id)
-            await _step_ok(run_id, step, pipeline.id)
+            await _log(run_id, step, f"✅ Image {image_tag} successfully transferred!", pipeline.name)
+            await _step_ok(run_id, step, pipeline.name)
 
             # STEP: deploy run
             step = "deploy_run"
-            await _step_start(run_id, step, pipeline.id)
+            await _step_start(run_id, step, pipeline.name)
 
             # Lancer le nouveau conteneur
             run_cmd = (
@@ -308,28 +315,28 @@ async def run_real_pipeline(run_id: int):
                 f"{image_tag}"
             )
 
-            await _log(run_id, step, f"Starting new container: {container_name}", pipeline.id)
+            await _log(run_id, step, f"Starting new container: {container_name}", pipeline.name)
             for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, run_cmd):
-                await _log(run_id, step, line, pipeline.id)
+                await _log(run_id, step, line, pipeline.name)
 
-            await _step_ok(run_id, step, pipeline.id)
+            await _step_ok(run_id, step, pipeline.name)
 
             # STEP: healthcheck
             step = "healthcheck"
-            await _step_start(run_id, step, pipeline.id)
+            await _step_start(run_id, step, pipeline.name)
             healthcheck_url = f"http://{DEPLOY_HOST}:8080/health"
-            await _log(run_id, step, f"GET {healthcheck_url}", pipeline.id)
+            await _log(run_id, step, f"GET {healthcheck_url}", pipeline.name)
             
             ok = _healthcheck(healthcheck_url)
             if not ok:
-                await _log(run_id, step, "⚠️ Healthcheck failed but continuing anyway", pipeline.id)
+                await _log(run_id, step, "⚠️ Healthcheck failed but continuing anyway", pipeline.name)
             else:
-                await _log(run_id, step, "✅ Healthcheck OK!", pipeline.id)
-            await _step_ok(run_id, step, pipeline.id)
+                await _log(run_id, step, "✅ Healthcheck OK!", pipeline.name)
+            await _step_ok(run_id, step, pipeline.name)
 
             # SUCCESS
-            await _emit(run_id, {"type": "run_success"}, pipeline.id)
-            await _log(run_id, "success", "🎉 Pipeline completed successfully!", pipeline.id)
+            await _emit(run_id, {"type": "run_success"}, pipeline.name)
+            await _log(run_id, "success", "🎉 Pipeline completed successfully!", pipeline.name)
             pipeline.status = "success"
             session.add(pipeline)
 
@@ -342,8 +349,8 @@ async def run_real_pipeline(run_id: int):
 
         except Exception as e:
             # Pipeline FAILED
-            await _emit(run_id, {"type": "run_failed", "message": str(e)}, pipeline.id)
-            await _log(run_id, "error", f"❌ Pipeline FAILED: {e}", pipeline.id)
+            await _emit(run_id, {"type": "run_failed", "message": str(e)}, pipeline.name)
+            await _log(run_id, "error", f"❌ Pipeline FAILED: {e}", pipeline.name)
             pipeline.status = "failed"
             session.add(pipeline)
 

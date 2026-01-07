@@ -8,7 +8,6 @@ from ..db import get_session
 from ..models import Pipeline, Run, RunStatus, User, Role
 from ..auth.proxy import get_current_user, require_role
 from .events import bus
-from .runner_fake import run_fake
 from .runner_real import run_real_pipeline  # Import du vrai runner
 from .runner_real import run_real_pipeline_bg
 
@@ -105,13 +104,7 @@ def run_pipeline(
     session.commit()
     session.refresh(run)
 
-    # Choisir le runner : fake pour demo, real pour production
-    use_real_runner = True
-
-    if use_real_runner:
-        bg.add_task(run_real_pipeline_bg, run.id)
-    else:
-        bg.add_task(run_fake, run.id)
+    bg.add_task(run_real_pipeline_bg, run.id)
 
     return {"runId": run.id}
 
@@ -181,13 +174,20 @@ def get_run_logs(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
+    pipeline = session.get(Pipeline, run.pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+
+    # Sanitize pipeline name
+    sanitized_name = pipeline.name.lower().replace(" ", "-").replace("_", "-")
+    
     log_file = (
         Path.home()
         / ".cicd"
         / "workspaces"
-        / f"pipeline-{run.pipeline_id}"
+        / sanitized_name
         / "logs"
-        / f"run-{run_id}.log"
+        / f"{sanitized_name}.log"
     )
 
     if not log_file.exists():

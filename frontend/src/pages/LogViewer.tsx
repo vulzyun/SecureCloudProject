@@ -48,7 +48,7 @@ export default function LogViewer() {
                 📄 Logs du Run #{runId}
               </h1>
               <p className="text-gray-600 mt-1">
-                Fichier : ~/.cicd/workspaces/pipeline-*/logs/run-{runId}.log
+                Fichier : ~/.cicd/workspaces/[pipeline-name]/logs/[pipeline-name].log
               </p>
             </div>
             <div className="flex items-center gap-4">
