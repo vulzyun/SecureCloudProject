@@ -258,13 +258,57 @@ async def run_real_pipeline(run_id: int):
             step = "deploy_run"
             await _step_start(run_id, step, pipeline.id)
 
-            rm_cmd = f"docker rm -f {container_name} 2>/dev/null || true"
-            run_cmd = f"docker run {image_tag}"
+            # Repo d'image (= "app") et tag à conserver
+            app_repo = sanitized_name  # ex: "securecloud-pipeline"
+            keep_tag = image_tag  # ex: "securecloud-pipeline:run-42"
+            container_name = sanitized_name  # nom stable du conteneur
+            app_port = 8080  # port exposé sur la machine prod
+            container_port = 8080  # port dans le conteneur (à adapter si besoin)
 
-            await _log(run_id, step, f"Stopping old container: {container_name}", pipeline.id)
-            for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, rm_cmd):
+            # 1) Nettoyage ciblé sur la prod : stop/rm conteneurs + rm images (sauf keep_tag)
+            cleanup_cmd = f"""
+            set -e
+
+            APP_REPO="{app_repo}"
+            KEEP_TAG="{keep_tag}"
+
+            echo "[cleanup] Keep tag: $KEEP_TAG"
+
+            # ID de l'image à garder (celle qu'on vient de docker load)
+            KEEP_ID=$(docker image inspect -f '{{{{.Id}}}}' "$KEEP_TAG" 2>/dev/null || true)
+            echo "[cleanup] Keep image id: $KEEP_ID"
+
+            # Stop & remove tous les conteneurs créés depuis APP_REPO (ton app uniquement)
+            docker ps -q --filter "ancestor=$APP_REPO" | xargs -r docker stop
+            docker ps -aq --filter "ancestor=$APP_REPO" | xargs -r docker rm -f
+
+            # Au cas où un conteneur avec le même nom existe encore
+            docker rm -f "{container_name}" 2>/dev/null || true
+
+            # Supprimer toutes les images APP_REPO sauf l'image KEEP_TAG
+            if [ -n "$KEEP_ID" ]; then
+              docker images "$APP_REPO" --format '{{{{.ID}}}}' | grep -v "$KEEP_ID" | xargs -r docker rmi -f
+            else
+              # si KEEP_TAG pas trouvé pour une raison quelconque, on évite de tout casser
+              echo "[cleanup] WARNING: keep image not found, skipping image cleanup"
+            fi
+
+            echo "[cleanup] done"
+            """.strip()
+
+            await _log(run_id, step, f"Cleaning previous containers/images for app repo: {app_repo}", pipeline.id)
+            for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, cleanup_cmd):
                 await _log(run_id, step, line, pipeline.id)
-            
+
+            # 2) Run conteneur : detach + name + ports + restart
+            run_cmd = (
+                f"docker run -d "
+                f"--name {container_name} "
+                f"--restart unless-stopped "
+                f"-p {app_port}:{container_port} "
+                f"{keep_tag}"
+            )
+
             await _log(run_id, step, f"Starting new container: {container_name}", pipeline.id)
             for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, run_cmd):
                 await _log(run_id, step, line, pipeline.id)
@@ -287,16 +331,34 @@ async def run_real_pipeline(run_id: int):
             # SUCCESS
             await _emit(run_id, {"type": "run_success"}, pipeline.id)
             await _log(run_id, "success", "🎉 Pipeline completed successfully!", pipeline.id)
+            pipeline.status = "success"
+            session.add(pipeline)
+
             run.status = RunStatus.success
             run.finished_at = datetime.utcnow()
             session.add(run)
             session.commit()
 
+
+
         except Exception as e:
             # Pipeline FAILED
             await _emit(run_id, {"type": "run_failed", "message": str(e)}, pipeline.id)
             await _log(run_id, "error", f"❌ Pipeline FAILED: {e}", pipeline.id)
+            pipeline.status = "failed"
+            session.add(pipeline)
+
             run.status = RunStatus.failed
             run.finished_at = datetime.utcnow()
             session.add(run)
             session.commit()
+
+def run_real_pipeline_bg(run_id: int):
+    """
+    Wrapper sync pour exécuter le runner async
+    depuis FastAPI BackgroundTasks.
+    """
+    import asyncio
+    asyncio.run(run_real_pipeline(run_id))
+
+

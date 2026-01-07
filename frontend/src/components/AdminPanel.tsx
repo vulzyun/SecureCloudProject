@@ -1,37 +1,88 @@
-import { useEffect, useState } from "react";
-import type { User } from "../types";
-import { userAPI } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import type { User, Pipeline } from "../types";
+import { userAPI, pipelineAPI } from "../api";
 
 export default function AdminPanel() {
+  // -----------------------------
+  // Users
+  // -----------------------------
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"users" | "create">("users");
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
-  // Pour mise à jour de rôle
+  // Tabs
+  const [activeTab, setActiveTab] = useState<"users" | "create" | "pipelines">("users");
+
+  // Update role
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [selectedRole, setSelectedRole] = useState<"viewer" | "dev" | "admin">("viewer");
 
-  // Pour création d'utilisateur
+  // Create user
   const [newUsername, setNewUsername] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<"viewer" | "dev" | "admin">("viewer");
 
+  // -----------------------------
+  // Pipelines
+  // -----------------------------
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [loadingPipelines, setLoadingPipelines] = useState(false);
+  const [runningPipelineId, setRunningPipelineId] = useState<number | null>(null);
+
+  // Messages
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
+  const loading = loadingUsers || loadingPipelines;
 
+  // -----------------------------
+  // Loaders
+  // -----------------------------
   const loadUsers = async () => {
     try {
       const data = await userAPI.getAllUsers();
       setUsers(data);
     } catch (e: any) {
       console.error("Error loading users:", e);
+      setError(e?.message || "Erreur lors du chargement des utilisateurs");
     }
   };
 
+  const loadPipelines = async () => {
+    try {
+      const data = await pipelineAPI.getAllPipelines();
+      setPipelines(data);
+    } catch (e: any) {
+      console.error("Error loading pipelines:", e);
+      setError(e?.message || "Erreur lors du chargement des pipelines");
+    }
+  };
+
+  // Initial load
+  useEffect(() => {
+    loadUsers();
+    loadPipelines();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ✅ Polling pipelines: refresh tant qu'il y a du pending/running
+  const hasRunning = useMemo(() => {
+    return pipelines.some((p) => ["pending", "running"].includes((p.status || "").toLowerCase()));
+  }, [pipelines]);
+
+  useEffect(() => {
+    if (!hasRunning) return;
+
+    const t = setInterval(() => {
+      loadPipelines();
+    }, 2000);
+
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasRunning]);
+
+  // -----------------------------
+  // Actions Users
+  // -----------------------------
   const handleUpdateRole = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUserId) {
@@ -39,7 +90,7 @@ export default function AdminPanel() {
       return;
     }
 
-    setLoading(true);
+    setLoadingUsers(true);
     setError(null);
     setSuccess(null);
 
@@ -47,11 +98,11 @@ export default function AdminPanel() {
       await userAPI.updateUserRole(selectedUserId, selectedRole);
       setSuccess(`Rôle mis à jour vers ${selectedRole}`);
       setSelectedUserId(null);
-      loadUsers();
+      await loadUsers();
     } catch (e: any) {
       setError(e?.message || "Erreur lors de la mise à jour du rôle");
     } finally {
-      setLoading(false);
+      setLoadingUsers(false);
     }
   };
 
@@ -62,7 +113,7 @@ export default function AdminPanel() {
       return;
     }
 
-    setLoading(true);
+    setLoadingUsers(true);
     setError(null);
     setSuccess(null);
 
@@ -72,15 +123,40 @@ export default function AdminPanel() {
       setNewUsername("");
       setNewEmail("");
       setNewRole("viewer");
-      loadUsers();
+      await loadUsers();
       setActiveTab("users");
     } catch (e: any) {
       setError(e?.message || "Erreur lors de la création de l'utilisateur");
     } finally {
-      setLoading(false);
+      setLoadingUsers(false);
     }
   };
 
+  // -----------------------------
+  // Actions Pipelines
+  // -----------------------------
+  const handleRunPipeline = async (id: number) => {
+    setLoadingPipelines(true);
+    setRunningPipelineId(id);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      await pipelineAPI.runPipeline(id);
+      setSuccess("Pipeline lancé !");
+      // refresh immédiat (et le polling prendra le relais)
+      await loadPipelines();
+    } catch (e: any) {
+      setError(e?.message || "Erreur lors du lancement du pipeline");
+    } finally {
+      setLoadingPipelines(false);
+      setRunningPipelineId(null);
+    }
+  };
+
+  // -----------------------------
+  // UI helpers
+  // -----------------------------
   const getRoleColor = (role: string) => {
     switch (role) {
       case "admin":
@@ -94,23 +170,49 @@ export default function AdminPanel() {
     }
   };
 
+  const getStatusPill = (status: string) => {
+    const s = (status || "").toLowerCase();
+    if (s === "success") return "bg-green-100 text-green-800 border-green-200";
+    if (s === "failed" || s === "error") return "bg-red-100 text-red-800 border-red-200";
+    if (s === "running") return "bg-blue-100 text-blue-800 border-blue-200";
+    if (s === "pending") return "bg-yellow-100 text-yellow-800 border-yellow-200";
+    return "bg-gray-100 text-gray-800 border-gray-200";
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-      <h2 className="text-xl font-bold text-gray-900 mb-6">Panneau d'Administration</h2>
+      <div className="flex items-start justify-between gap-4">
+        <h2 className="text-xl font-bold text-gray-900">Panneau d&apos;Administration</h2>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setError(null);
+              setSuccess(null);
+              loadUsers();
+              loadPipelines();
+            }}
+            className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+            disabled={loading}
+          >
+            Rafraîchir
+          </button>
+        </div>
+      </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3">
+        <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
           <p className="text-red-800 text-sm">{error}</p>
         </div>
       )}
       {success && (
-        <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3">
+        <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-3">
           <p className="text-green-800 text-sm">{success}</p>
         </div>
       )}
 
       {/* Tabs */}
-      <div className="mb-6 border-b border-gray-200">
+      <div className="mt-6 border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
           <button
             onClick={() => setActiveTab("users")}
@@ -120,8 +222,9 @@ export default function AdminPanel() {
                 : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
           >
-            Gestion des utilisateurs
+            Utilisateurs
           </button>
+
           <button
             onClick={() => setActiveTab("create")}
             className={`py-4 px-1 border-b-2 font-medium text-sm ${
@@ -132,20 +235,28 @@ export default function AdminPanel() {
           >
             Créer un utilisateur
           </button>
+
+          <button
+            onClick={() => setActiveTab("pipelines")}
+            className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              activeTab === "pipelines"
+                ? "border-red-500 text-red-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Pipelines
+          </button>
         </nav>
       </div>
 
-      {/* Users Tab */}
+      {/* USERS TAB */}
       {activeTab === "users" && (
         <>
-          {/* Update Role Form */}
-          <form onSubmit={handleUpdateRole} className="mb-6 bg-gray-50 rounded-lg p-4">
-            <h3 className="font-semibold text-gray-900 mb-4">Attribuer un test</h3>
+          <form onSubmit={handleUpdateRole} className="mt-6 mb-6 bg-gray-50 rounded-lg p-4">
+            <h3 className="font-semibold text-gray-900 mb-4">Attribuer un rôle</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Utilisateur
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Utilisateur</label>
                 <select
                   value={selectedUserId || ""}
                   onChange={(e) => setSelectedUserId(Number(e.target.value) || null)}
@@ -153,17 +264,16 @@ export default function AdminPanel() {
                   disabled={loading}
                 >
                   <option value="">Sélectionner un utilisateur</option>
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.username} ({user.email})
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.username} ({u.email})
                     </option>
                   ))}
                 </select>
               </div>
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Rôle
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Rôle</label>
                 <select
                   value={selectedRole}
                   onChange={(e) => setSelectedRole(e.target.value as any)}
@@ -175,55 +285,49 @@ export default function AdminPanel() {
                   <option value="admin">Admin</option>
                 </select>
               </div>
+
               <div className="flex items-end">
                 <button
                   type="submit"
                   disabled={loading}
                   className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg disabled:opacity-50"
                 >
-                  {loading ? "Mise à jour..." : "Mettre à jour"}
+                  {loadingUsers ? "Mise à jour..." : "Mettre à jour"}
                 </button>
               </div>
             </div>
           </form>
 
-          {/* Users Table */}
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Utilisateur
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Rôle
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                    Date de création
-                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Utilisateur</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rôle</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date de création</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {users.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
+                {users.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{user.username}</div>
+                      <div className="text-sm font-medium text-gray-900">{u.username}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">{user.email}</div>
+                      <div className="text-sm text-gray-500">{u.email}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full border ${getRoleColor(user.role)}`}>
-                        {user.role.toUpperCase()}
+                      <span
+                        className={`inline-block text-xs font-semibold px-3 py-1 rounded-full border ${getRoleColor(
+                          u.role
+                        )}`}
+                      >
+                        {u.role.toUpperCase()}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
-                        {new Date(user.created_at).toLocaleDateString()}
-                      </div>
+                      <div className="text-sm text-gray-500">{new Date(u.created_at).toLocaleDateString()}</div>
                     </td>
                   </tr>
                 ))}
@@ -233,15 +337,13 @@ export default function AdminPanel() {
         </>
       )}
 
-      {/* Create User Tab */}
+      {/* CREATE TAB */}
       {activeTab === "create" && (
-        <form onSubmit={handleCreateUser} className="bg-gray-50 rounded-lg p-6">
+        <form onSubmit={handleCreateUser} className="mt-6 bg-gray-50 rounded-lg p-6">
           <h3 className="font-semibold text-gray-900 mb-6">Créer un nouvel utilisateur</h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Nom d'utilisateur *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nom d&apos;utilisateur *</label>
               <input
                 type="text"
                 value={newUsername}
@@ -252,10 +354,9 @@ export default function AdminPanel() {
                 required
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email (optionnel)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Email (optionnel)</label>
               <input
                 type="email"
                 value={newEmail}
@@ -264,14 +365,11 @@ export default function AdminPanel() {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                 disabled={loading}
               />
-              <p className="mt-1 text-xs text-gray-500">
-                Si non fourni, un email sera généré: username@local
-              </p>
+              <p className="mt-1 text-xs text-gray-500">Si non fourni, un email sera généré: username@local</p>
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Rôle *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Rôle *</label>
               <select
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value as any)}
@@ -283,13 +381,14 @@ export default function AdminPanel() {
                 <option value="admin">Admin</option>
               </select>
             </div>
+
             <div className="flex space-x-3 pt-4">
               <button
                 type="submit"
                 disabled={loading}
                 className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg disabled:opacity-50"
               >
-                {loading ? "Création..." : "Créer l'utilisateur"}
+                {loadingUsers ? "Création..." : "Créer l'utilisateur"}
               </button>
               <button
                 type="button"
@@ -307,6 +406,69 @@ export default function AdminPanel() {
             </div>
           </div>
         </form>
+      )}
+
+      {/* PIPELINES TAB */}
+      {activeTab === "pipelines" && (
+        <div className="mt-6">
+          <div className="flex items-center justify-between gap-4 mb-4">
+            <h3 className="font-semibold text-gray-900">Pipelines</h3>
+            <p className="text-sm text-gray-500">
+              {hasRunning ? "Mise à jour auto (toutes les 2s)..." : "Stable"}
+            </p>
+          </div>
+
+          {pipelines.length === 0 ? (
+            <div className="text-center py-10">
+              <p className="text-gray-500">Aucun pipeline</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Repo</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {pipelines.map((p) => (
+                    <tr key={p.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{p.name}</td>
+                      <td className="px-6 py-4 text-sm text-blue-600 hover:underline">
+                        <a href={p.github_url} target="_blank" rel="noopener noreferrer">
+                          {p.github_url}
+                        </a>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{p.branch}</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`inline-block text-xs font-semibold px-3 py-1 rounded-full border ${getStatusPill(
+                            p.status
+                          )}`}
+                        >
+                          {(p.status || "unknown").toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <button
+                          onClick={() => handleRunPipeline(p.id)}
+                          disabled={loadingPipelines || (runningPipelineId === p.id)}
+                          className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-4 rounded-lg disabled:opacity-50"
+                        >
+                          {runningPipelineId === p.id ? "Lancement..." : "Lancer"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

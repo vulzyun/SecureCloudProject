@@ -46,3 +46,5 @@ router = APIRouter(prefix="/api", tags=["Authentication"])
 def me(user: User = Depends(get_current_user)):
     """Get current authenticated user."""
     return user
+
+

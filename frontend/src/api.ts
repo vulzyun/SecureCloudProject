@@ -1,7 +1,5 @@
 import type { User, Pipeline } from "./types";
 
-// Si on accède via oauth2-proxy (port 4180), utiliser une URL relative
-// Sinon utiliser l'URL directe du backend pour le dev
 const isOAuth2Proxy = window.location.port === "4180";
 const API = isOAuth2Proxy ? "" : (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000");
 export const API_BASE = API;
@@ -9,9 +7,11 @@ export const API_BASE = API;
 export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     ...opts,
+    cache: "no-store",
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
   });
+
   if (!res.ok) throw new Error(await res.text());
   const txt = await res.text();
   return (txt ? JSON.parse(txt) : null) as T;
@@ -52,9 +52,10 @@ export const pipelineAPI = {
 
 export const runAPI = {
   history: (runId: number) => api<any[]>(`/api/runs/${runId}/history`),
-  
+
   getLogs: async (runId: number): Promise<string> => {
     const res = await fetch(`${API}/api/runs/${runId}/logs`, {
+      cache: "no-store",
       credentials: "include",
     });
     if (!res.ok) throw new Error(await res.text());
