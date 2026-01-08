@@ -24,7 +24,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard user={user} />} />
             <Route path="/runs/:runId" element={<RunRoute />} />
-            <Route path="/logs/:runId" element={<LogViewer />} />
+            <Route path="/logs/:pipelineId" element={<LogViewer />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         )}

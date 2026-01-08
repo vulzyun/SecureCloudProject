@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { runAPI } from "../api";
 
 export default function LogViewer() {
-  const { runId } = useParams<{ runId: string }>();
+  const { pipelineId } = useParams<{ pipelineId: string }>();
   const navigate = useNavigate();
   const [logs, setLogs] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -11,12 +11,12 @@ export default function LogViewer() {
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   const fetchLogs = async () => {
-    if (!runId) return;
+    if (!pipelineId) return;
     
     setLoading(true);
     setError(null);
     try {
-      const content = await runAPI.getLogs(Number(runId));
+      const content = await runAPI.getLogs(Number(pipelineId));
       setLogs(content);
     } catch (e: any) {
       setError(e.message || "Failed to fetch logs");
@@ -27,7 +27,7 @@ export default function LogViewer() {
 
   useEffect(() => {
     fetchLogs();
-  }, [runId]);
+  }, [pipelineId]);
 
   // Auto-refresh every 2 seconds when enabled
   useEffect(() => {
@@ -35,7 +35,7 @@ export default function LogViewer() {
     
     const interval = setInterval(fetchLogs, 2000);
     return () => clearInterval(interval);
-  }, [autoRefresh, runId]);
+  }, [autoRefresh, pipelineId]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -45,7 +45,7 @@ export default function LogViewer() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                📄 Logs du Run #{runId}
+                📄 Logs du Pipeline #{pipelineId}
               </h1>
               <p className="text-gray-600 mt-1">
                 Fichier : ~/.cicd/workspaces/[pipeline-name]/logs/[pipeline-name].log

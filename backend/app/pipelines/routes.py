@@ -155,26 +155,22 @@ async def run_events(
 
 
 @router.get(
-    "/runs/{run_id}/logs",
+    "/pipelines/{pipeline_id}/logs",
     response_class=PlainTextResponse,
-    summary="Get run logs from file",
+    summary="Get pipeline logs from file",
     description="""
-    Retrieve the complete log file content for a specific run.
+    Retrieve the complete log file content for a specific pipeline.
 
     **Permissions:** Any authenticated user
     """,
 )
-def get_run_logs(
-    run_id: int,
+def get_pipeline_logs(
+    pipeline_id: int,
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ):
-    """Get log file content for a run."""
-    run = session.get(Run, run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    pipeline = session.get(Pipeline, run.pipeline_id)
+    """Get log file content for a pipeline."""
+    pipeline = session.get(Pipeline, pipeline_id)
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
 

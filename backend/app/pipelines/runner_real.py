@@ -116,17 +116,32 @@ def _ssh_exec(user: str, host: str, port: int, remote_cmd: str) -> Iterable[str]
     return _run_cmd(["ssh", "-p", str(port), f"{user}@{host}", remote_cmd])
 
 
-def _docker_save_and_load_over_ssh(user: str, host: str, port: int, image_tag: str) -> None:
-    """docker save <image_tag> | ssh user@host "docker load" """
+def _docker_save_and_load_over_ssh(user: str, host: str, port: int, image_tag: str) -> Iterable[str]:
+    """
+    sudo docker save <image_tag> | ssh user@host "docker load"
+    Returns output lines for real-time logging.
+    Uses sudo locally for docker save, but not on remote (docker has permissions there).
+    """
+    # 1. Save Docker image to stdout (needs sudo locally)
     save = subprocess.Popen(
-        ["docker", "save", image_tag],
+        ["sudo", "docker", "save", image_tag],
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
     )
     assert save.stdout is not None
 
+    # 2. Load via SSH with compression and keep-alive (no sudo needed on remote)
     load = subprocess.Popen(
-        ["ssh", "-p", str(port), f"{user}@{host}", "docker load"],
+        [
+            "ssh",
+            "-p", str(port),
+            "-o", "ServerAliveInterval=30",   # Keep-alive every 30s
+            "-o", "ServerAliveCountMax=10",    # Max 10 retries
+            "-o", "Compression=yes",           # Compress transfer
+            "-o", "TCPKeepAlive=yes",          # TCP keep-alive
+            f"{user}@{host}",
+            "docker load"  
+        ],
         stdin=save.stdout,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -137,13 +152,24 @@ def _docker_save_and_load_over_ssh(user: str, host: str, port: int, image_tag: s
 
     output = []
     assert load.stdout is not None
+    
+    # Yield lines for real-time logging
     for line in load.stdout:
         output.append(line)
+        yield line.rstrip("\n")
 
-    rc = load.wait()
-    save.wait()
-    if rc != 0:
-        raise RuntimeError("docker load over ssh failed:\n" + "".join(output))
+    # Wait for both processes
+    load_rc = load.wait()
+    save_rc = save.wait()
+    
+    # Check for docker save errors
+    if save_rc != 0:
+        save_stderr = save.stderr.read().decode() if save.stderr else ""
+        raise RuntimeError(f"docker save failed (exit code {save_rc}): {save_stderr}")
+    
+    # Check for docker load errors
+    if load_rc != 0:
+        raise RuntimeError(f"docker load over ssh failed (exit code {load_rc}):\n" + "".join(output))
 
 
 def _healthcheck(url: str, timeout_sec: int = 2, retries: int = 25, delay_sec: float = 0.5) -> bool:
@@ -270,7 +296,11 @@ async def run_real_pipeline(run_id: int):
       7) Healthcheck
     """
     # Configuration SSH en dur
+<<<<<<< HEAD
     DEPLOY_USER = "mohammed"
+=======
+    DEPLOY_USER = "mohamed"
+>>>>>>> d267ec06fd9ddefd70625f5249ade15c2be66ab8
     DEPLOY_HOST = "188.166.77.14"
     DEPLOY_PORT = 22
     
@@ -340,7 +370,7 @@ async def run_real_pipeline(run_id: int):
             await _log(run_id, step, f"Building Docker image: {image_tag}", pipeline.name)
             await _log(run_id, step, f"Build context: {build_context}", pipeline.name)
             
-            for line in _run_cmd(["docker", "build", "-t", image_tag, build_context]):
+            for line in _run_cmd(["sudo", "docker", "build", "-t", image_tag, build_context]):
                 await _log(run_id, step, line, pipeline.name)
             
             await _log(run_id, step, "✅ Docker image built successfully!", pipeline.name)
@@ -395,7 +425,9 @@ async def run_real_pipeline(run_id: int):
             await _log(run_id, step, f"📦 Shipping Docker image to {DEPLOY_USER}@{DEPLOY_HOST}", pipeline.name)
             await _log(run_id, step, "This may take several minutes depending on image size...", pipeline.name)
             
-            _docker_save_and_load_over_ssh(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, image_tag)
+            for line in _docker_save_and_load_over_ssh(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, image_tag):
+                await _log(run_id, step, line, pipeline.name)
+            
             await _log(run_id, step, f"✅ Image {image_tag} successfully transferred!", pipeline.name)
             await _step_ok(run_id, step, pipeline.name)
 
@@ -421,7 +453,7 @@ async def run_real_pipeline(run_id: int):
             # STEP: healthcheck
             step = "healthcheck"
             await _step_start(run_id, step, pipeline.name)
-            healthcheck_url = f"http://{DEPLOY_HOST}:8080/health"
+            healthcheck_url = f"http://{DEPLOY_HOST}:8080/swagger-ui/index.html"
             await _log(run_id, step, f"GET {healthcheck_url}", pipeline.name)
             
             ok = _healthcheck(healthcheck_url)
