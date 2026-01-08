@@ -71,8 +71,8 @@ export const pipelineAPI = {
 export const runAPI = {
   history: (runId: number) => api<any[]>(`/api/runs/${runId}/history`),
 
-  getLogs: async (runId: number): Promise<string> => {
-    const res = await fetch(`${API}/api/runs/${runId}/logs`, {
+  getLogs: async (pipelineId: number): Promise<string> => {
+    const res = await fetch(`${API}/api/pipelines/${pipelineId}/logs`, {
       cache: "no-store",
       credentials: "include",
     });
