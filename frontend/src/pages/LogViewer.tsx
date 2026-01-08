@@ -45,7 +45,7 @@ export default function LogViewer() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                📄 Logs du Pipeline #{pipelineId}
+                Logs du Pipeline #{pipelineId}
               </h1>
               <p className="text-gray-600 mt-1">
                 Fichier : ~/.cicd/workspaces/[pipeline-name]/logs/[pipeline-name].log
@@ -66,13 +66,13 @@ export default function LogViewer() {
                 disabled={loading}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg disabled:opacity-50"
               >
-                {loading ? "⟳ Chargement..." : "🔄 Rafraîchir"}
+                {loading ? "Chargement..." : "Rafraichir"}
               </button>
               <button
                 onClick={() => navigate(-1)}
                 className="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg"
               >
-                ← Retour
+                Retour
               </button>
             </div>
           </div>

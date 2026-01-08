@@ -59,7 +59,7 @@ async def _step_start(run_id: int, step: str, pipeline_name: Optional[str] = Non
 async def _step_ok(run_id: int, step: str, pipeline_name: Optional[str] = None):
     if pipeline_name:
         log_file = _get_log_file(pipeline_name, run_id)
-        _write_to_log(log_file, f"✓ STEP COMPLETED: {step}")
+        _write_to_log(log_file, f"STEP COMPLETED: {step}")
     await _emit(run_id, {"type": "step_success", "step": step})
 
 async def _log(run_id: int, step: str, line: str, pipeline_name: Optional[str] = None):
@@ -233,7 +233,7 @@ async def _rollback_to_previous(
     await _step_start(run_id, step, pipeline_name)
     
     if not previous_commit:
-        await _log(run_id, step, "❌ No previous commit available, cannot rollback", pipeline_name)
+        await _log(run_id, step, "No previous commit available, cannot rollback", pipeline_name)
         await _step_ok(run_id, step, pipeline_name)
         return
     
@@ -249,15 +249,15 @@ async def _rollback_to_previous(
             pass
         
         # Checkout previous commit
-        await _log(run_id, step, f"🔄 Checking out previous commit: {previous_commit}", pipeline_name)
+        await _log(run_id, step, f"Checking out previous commit: {previous_commit}", pipeline_name)
         for line in _run_cmd(["git", "checkout", previous_commit], cwd=str(ws)):
             if line.strip() and "HEAD is now at" in line:
                 await _log(run_id, step, line.strip(), pipeline_name)
         
-        await _log(run_id, step, "✅ Rollback checkout completed - now rerunning pipeline...", pipeline_name)
+        await _log(run_id, step, "Rollback checkout completed - now rerunning pipeline...", pipeline_name)
         await _step_ok(run_id, step, pipeline_name)
         
-        # 🔄 REFAIRE TOUT LE PIPELINE avec le commit précédent
+        # REFAIRE TOUT LE PIPELINE avec le commit précédent
         sanitized_name = _sanitize_name(pipeline_name)
         rollback_image_tag = f"{sanitized_name}:rollback-{run_id}"
         demo_dir = ws / "demo"
@@ -280,7 +280,7 @@ async def _rollback_to_previous(
             for line in _run_cmd(["./mvnw", "-B", "test"], cwd=str(demo_dir)):
                 await _log(run_id, step, line, pipeline_name)
             
-            await _log(run_id, step, "✅ Tests passed!", pipeline_name)
+            await _log(run_id, step, "Tests passed!", pipeline_name)
             await _step_ok(run_id, step, pipeline_name)
         
         # STEP: SonarCloud (rollback)
@@ -291,11 +291,11 @@ async def _rollback_to_previous(
             await _log(run_id, step, "No demo directory, skipping SonarCloud", pipeline_name)
             await _step_ok(run_id, step, pipeline_name)
         else:
-            await _log(run_id, step, "🔍 Running SonarCloud analysis...", pipeline_name)
+            await _log(run_id, step, "Running SonarCloud analysis...", pipeline_name)
             
             sonar_token = settings.sonar_token
             if not sonar_token:
-                await _log(run_id, step, "⚠️ SONAR_TOKEN not found, skipping", pipeline_name)
+                await _log(run_id, step, "SONAR_TOKEN not found, skipping", pipeline_name)
                 await _step_ok(run_id, step, pipeline_name)
             else:
                 import os
@@ -320,11 +320,11 @@ async def _rollback_to_previous(
                     rc = p.wait()
                     
                     if rc != 0:
-                        await _log(run_id, step, f"⚠️ SonarCloud failed (code {rc}) - continuing rollback", pipeline_name)
+                        await _log(run_id, step, f"SonarCloud failed (code {rc}) - continuing rollback", pipeline_name)
                     else:
-                        await _log(run_id, step, "✅ SonarCloud completed", pipeline_name)
+                        await _log(run_id, step, "SonarCloud completed", pipeline_name)
                 except Exception as e:
-                    await _log(run_id, step, f"⚠️ SonarCloud error: {e} - continuing", pipeline_name)
+                    await _log(run_id, step, f"SonarCloud error: {e} - continuing", pipeline_name)
                 
                 await _step_ok(run_id, step, pipeline_name)
         
@@ -338,7 +338,7 @@ async def _rollback_to_previous(
         for line in _run_cmd(["sudo", "docker", "build", "-t", rollback_image_tag, build_context]):
             await _log(run_id, step, line, pipeline_name)
         
-        await _log(run_id, step, "✅ Docker image built!", pipeline_name)
+        await _log(run_id, step, "Docker image built!", pipeline_name)
         await _step_ok(run_id, step, pipeline_name)
         
         # STEP: Ship image (rollback)
@@ -349,7 +349,7 @@ async def _rollback_to_previous(
         for line in _docker_save_and_load_over_ssh(user, host, port, rollback_image_tag):
             await _log(run_id, step, line, pipeline_name)
         
-        await _log(run_id, step, "✅ Image transferred!", pipeline_name)
+        await _log(run_id, step, "Image transferred!", pipeline_name)
         await _step_ok(run_id, step, pipeline_name)
         
         # STEP: Deploy (rollback)
@@ -371,7 +371,7 @@ async def _rollback_to_previous(
         await _step_ok(run_id, step, pipeline_name)
         
     except Exception as e:
-        await _log(run_id, step, f"❌ Rollback failed: {e}", pipeline_name)
+        await _log(run_id, step, f"Rollback failed: {e}", pipeline_name)
 
 
 # ----------------------------
@@ -447,7 +447,7 @@ async def run_real_pipeline(run_id: int):
                 for line in _run_cmd(["./mvnw", "-B", "test"], cwd=str(demo_dir)):
                     await _log(run_id, step, line, pipeline.name)
                 
-                await _log(run_id, step, "✅ Tests passed successfully!", pipeline.name)
+                await _log(run_id, step, "Tests passed successfully!", pipeline.name)
                 await _step_ok(run_id, step, pipeline.name)
 
             # STEP: sonarcloud analysis
@@ -458,13 +458,13 @@ async def run_real_pipeline(run_id: int):
                 await _log(run_id, step, "No demo directory found, skipping SonarCloud", pipeline.name)
                 await _step_ok(run_id, step, pipeline.name)
             else:
-                await _log(run_id, step, "🔍 Running SonarCloud analysis...", pipeline.name)
+                await _log(run_id, step, "Running SonarCloud analysis...", pipeline.name)
                 await _log(run_id, step, "Results will be available on sonarcloud.io", pipeline.name)
                 
                 # Récupérer le token depuis la config
                 sonar_token = settings.sonar_token
                 if not sonar_token:
-                    await _log(run_id, step, "❌ ERROR: SONAR_TOKEN not found in .env file", pipeline.name)
+                    await _log(run_id, step, "ERROR: SONAR_TOKEN not found in .env file", pipeline.name)
                     raise RuntimeError("Missing SONAR_TOKEN - please add it to backend/.env")
                 
                 # Préparer l'environnement avec le token
@@ -498,14 +498,14 @@ async def run_real_pipeline(run_id: int):
                     rc = p.wait()
                     
                     if rc != 0:
-                        await _log(run_id, step, f"❌ SonarCloud analysis failed with exit code {rc}", pipeline.name)
+                        await _log(run_id, step, f"SonarCloud analysis failed with exit code {rc}", pipeline.name)
                         raise RuntimeError(f"SonarCloud analysis failed ({rc})")
                     
-                    await _log(run_id, step, "✅ SonarCloud analysis completed successfully!", pipeline.name)
-                    await _log(run_id, step, "📊 View results: https://sonarcloud.io/project/overview?id=vulzyun_bfbarchitecture", pipeline.name)
+                    await _log(run_id, step, "SonarCloud analysis completed successfully!", pipeline.name)
+                    await _log(run_id, step, "View results: https://sonarcloud.io/project/overview?id=vulzyun_bfbarchitecture", pipeline.name)
                     
                 except Exception as e:
-                    await _log(run_id, step, f"❌ SonarCloud analysis error: {e}", pipeline.name)
+                    await _log(run_id, step, f"SonarCloud analysis error: {e}", pipeline.name)
                     raise
                 
                 await _step_ok(run_id, step, pipeline.name)
@@ -521,7 +521,7 @@ async def run_real_pipeline(run_id: int):
             for line in _run_cmd(["sudo", "docker", "build", "-t", image_tag, build_context]):
                 await _log(run_id, step, line, pipeline.name)
             
-            await _log(run_id, step, "✅ Docker image built successfully!", pipeline.name)
+            await _log(run_id, step, "Docker image built successfully!", pipeline.name)
             await _step_ok(run_id, step, pipeline.name)
 
             # STEP: cleanup (AVANT d'envoyer la nouvelle image)
@@ -570,13 +570,13 @@ async def run_real_pipeline(run_id: int):
             # STEP: ship image (ssh)
             step = "ship_image_ssh"
             await _step_start(run_id, step, pipeline.name)
-            await _log(run_id, step, f"📦 Shipping Docker image to {DEPLOY_USER}@{DEPLOY_HOST}", pipeline.name)
+            await _log(run_id, step, f"Shipping Docker image to {DEPLOY_USER}@{DEPLOY_HOST}", pipeline.name)
             await _log(run_id, step, "This may take several minutes depending on image size...", pipeline.name)
             
             for line in _docker_save_and_load_over_ssh(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, image_tag):
                 await _log(run_id, step, line, pipeline.name)
             
-            await _log(run_id, step, f"✅ Image {image_tag} successfully transferred!", pipeline.name)
+            await _log(run_id, step, f"Image {image_tag} successfully transferred!", pipeline.name)
             await _step_ok(run_id, step, pipeline.name)
 
             # STEP: deploy run
@@ -607,14 +607,14 @@ async def run_real_pipeline(run_id: int):
             
             ok, message = _healthcheck(healthcheck_url)
             if not ok:
-                await _log(run_id, step, f"❌ Healthcheck FAILED: {message}", pipeline.name)
+                await _log(run_id, step, f"Healthcheck FAILED: {message}", pipeline.name)
                 await _log(run_id, step, "Triggering rollback...", pipeline.name)
                 await _step_ok(run_id, step, pipeline.name)
                 
                 # Get previous commit from git history (HEAD~1) for rollback
                 previous_commit = _get_previous_commit_from_history(ws)
                 if previous_commit:
-                    await _log(run_id, step, f"📌 Rolling back to HEAD~1: {previous_commit}", pipeline.name)
+                    await _log(run_id, step, f"Rolling back to HEAD~1: {previous_commit}", pipeline.name)
                 
                 if previous_commit:
                     await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, ws, previous_commit, pipeline.name)
@@ -628,22 +628,22 @@ async def run_real_pipeline(run_id: int):
                     
                     ok_rollback, message_rollback = _healthcheck(healthcheck_url)
                     if ok_rollback:
-                        await _log(run_id, step, f"✅ Rollback healthcheck OK! {message_rollback}", pipeline.name)
+                        await _log(run_id, step, f"Rollback healthcheck OK! {message_rollback}", pipeline.name)
                         await _step_ok(run_id, step, pipeline.name)
                         await _emit(run_id, {"type": "run_success"}, pipeline.name)
-                        await _log(run_id, "success", "🎉 Rollback successful - Previous version is healthy!", pipeline.name)
+                        await _log(run_id, "success", "Rollback successful - Previous version is healthy!", pipeline.name)
                         pipeline.status = "success"
                         run.status = RunStatus.success
                     else:
-                        await _log(run_id, step, f"❌ Rollback healthcheck FAILED: {message_rollback}", pipeline.name)
+                        await _log(run_id, step, f"Rollback healthcheck FAILED: {message_rollback}", pipeline.name)
                         await _step_ok(run_id, step, pipeline.name)
                         await _emit(run_id, {"type": "run_failed", "message": "Rollback deployed but healthcheck failed"}, pipeline.name)
-                        await _log(run_id, "error", "❌ Rollback deployed but previous version failed healthcheck", pipeline.name)
+                        await _log(run_id, "error", "Rollback deployed but previous version failed healthcheck", pipeline.name)
                         pipeline.status = "failed"
                         run.status = RunStatus.failed
                 else:
                     await _emit(run_id, {"type": "run_failed", "message": "Healthcheck failed - no previous commit in git history"}, pipeline.name)
-                    await _log(run_id, "error", "❌ Healthcheck failed and no previous commit available (first commit?)", pipeline.name)
+                    await _log(run_id, "error", "Healthcheck failed and no previous commit available (first commit?)", pipeline.name)
                     pipeline.status = "failed"
                     run.status = RunStatus.failed
                 
@@ -653,12 +653,12 @@ async def run_real_pipeline(run_id: int):
                 session.commit()
                 return
             else:
-                await _log(run_id, step, f"✅ Healthcheck OK! {message}", pipeline.name)
+                await _log(run_id, step, f"Healthcheck OK! {message}", pipeline.name)
             await _step_ok(run_id, step, pipeline.name)
 
             # SUCCESS
             await _emit(run_id, {"type": "run_success"}, pipeline.name)
-            await _log(run_id, "success", "🎉 Pipeline completed successfully!", pipeline.name)
+            await _log(run_id, "success", "Pipeline completed successfully!", pipeline.name)
             pipeline.status = "success"
             session.add(pipeline)
 
@@ -672,16 +672,16 @@ async def run_real_pipeline(run_id: int):
         except Exception as e:
             # Pipeline FAILED - attempt rollback
             await _emit(run_id, {"type": "run_failed", "message": str(e)}, pipeline.name)
-            await _log(run_id, "error", f"❌ Pipeline FAILED: {e}", pipeline.name)
+            await _log(run_id, "error", f"Pipeline FAILED: {e}", pipeline.name)
             
             # Get previous commit from git history (HEAD~1) and attempt rollback
             previous_commit = _get_previous_commit_from_history(ws)
             
             if previous_commit:
-                await _log(run_id, "error", f"⚠️ Attempting rollback to previous commit from git history: {previous_commit}", pipeline.name)
+                await _log(run_id, "error", f"Attempting rollback to previous commit from git history: {previous_commit}", pipeline.name)
                 await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, ws, previous_commit, pipeline.name)
             else:
-                await _log(run_id, "error", "⚠️ No previous commit in git history (first commit?)", pipeline.name)
+                await _log(run_id, "error", "No previous commit in git history (first commit?)", pipeline.name)
             
             pipeline.status = "failed"
             session.add(pipeline)

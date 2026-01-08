@@ -85,7 +85,7 @@ export default function AdminPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Polling pipelines: refresh tant qu'il y a du pending/running
+  // Polling pipelines: refresh tant qu'il y a du pending/running
   const hasRunning = useMemo(() => {
     return pipelines.some((p) => ["pending", "running"].includes((p.status || "").toLowerCase()));
   }, [pipelines]);
@@ -101,7 +101,7 @@ export default function AdminPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasRunning]);
 
-  // ✅ Polling role requests
+  // Polling role requests
   useEffect(() => {
     const t = setInterval(() => {
       loadRoleRequests();
@@ -282,7 +282,7 @@ export default function AdminPanel() {
   return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-8">
       <div className="flex items-start justify-between gap-4">
-        <h2 className="text-xl font-bold text-gray-900">Panneau d&apos;Administration</h2>
+        <h2 className="text-xl font-bold text-gray-900">Panneau d'Administration</h2>
 
         <div className="flex gap-2">
           <button
@@ -473,7 +473,7 @@ export default function AdminPanel() {
           <h3 className="font-semibold text-gray-900 mb-6">Créer un nouvel utilisateur</h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nom d&apos;utilisateur *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nom d'utilisateur *</label>
               <input
                 type="text"
                 value={newUsername}
@@ -700,7 +700,7 @@ export default function AdminPanel() {
           <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm mx-auto">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirmer la suppression</h3>
             <p className="text-gray-600 mb-4">
-              Êtes-vous sûr de vouloir supprimer l&apos;utilisateur <strong>{deleteConfirmUsername}</strong> ?
+              Êtes-vous sûr de vouloir supprimer l'utilisateur <strong>{deleteConfirmUsername}</strong> ?
             </p>
             <p className="text-sm text-gray-500 mb-6">
               Cette action supprimera également toutes les demandes de rôle en attente ou rejetées.

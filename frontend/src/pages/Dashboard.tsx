@@ -256,7 +256,7 @@ export default function Dashboard({ user }: DashboardProps) {
                               disabled={loading}
                               className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-4 rounded-lg disabled:opacity-50"
                             >
-                              ▶️ Lancer
+                              Lancer
                             </button>
                             <button
                               onClick={() => handleDeletePipeline(p.id)}
@@ -267,7 +267,7 @@ export default function Dashboard({ user }: DashboardProps) {
                                   : "bg-red-600 hover:bg-red-700"
                               } text-white text-sm font-medium py-2 px-4 rounded-lg disabled:opacity-50`}
                             >
-                              {deleteConfirm === p.id ? "🗑️ Confirmer ?" : "🗑️ Supprimer"}
+                              {deleteConfirm === p.id ? "Supprimer ?" : "Supprimer"}
                             </button>
                           </div>
                         </td>

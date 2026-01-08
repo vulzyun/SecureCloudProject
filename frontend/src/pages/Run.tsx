@@ -8,11 +8,11 @@ function formatEvent(e: RunEvent): string {
     const step = e.step ? `[${e.step}] ` : "";
     return `${step}${e.message ?? ""}\n`;
   }
-  if (e.type === "step_start") return `\n▶️ START ${e.step}\n`;
-  if (e.type === "step_success") return `✅ OK ${e.step}\n`;
-  if (e.type === "run_start") return `\n🚀 RUN START\n`;
-  if (e.type === "run_success") return `\n🎉 RUN SUCCESS\n`;
-  if (e.type === "run_failed") return `\n❌ RUN FAILED: ${e.message ?? ""}\n`;
+  if (e.type === "step_start") return `\nSTART ${e.step}\n`;
+  if (e.type === "step_success") return `OK ${e.step}\n`;
+  if (e.type === "run_start") return `\nRUN START\n`;
+  if (e.type === "run_success") return `\nRUN SUCCESS\n`;
+  if (e.type === "run_failed") return `\nRUN FAILED: ${e.message ?? ""}\n`;
   return `${JSON.stringify(e)}\n`;
 }
 
@@ -78,7 +78,7 @@ export default function Run({ runId }: { runId: string }) {
             fontWeight: "600"
           }}
         >
-          📄 Voir les logs détaillés
+          Voir les logs détaillés
         </button>
       </div>
       {err && <pre style={{ color: "crimson" }}>{err}</pre>}

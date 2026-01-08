@@ -93,7 +93,7 @@ def run_pipeline(
     if not p:
         raise HTTPException(status_code=404, detail="pipeline not found")
 
-    # ✅ IMPORTANT: mettre à jour le pipeline immédiatement
+    # IMPORTANT: mettre à jour le pipeline immédiatement
     # Sinon le front refetch trop tôt et ne voit pas le changement.
     p.status = "running"
     session.add(p)
