@@ -118,18 +118,19 @@ def _ssh_exec(user: str, host: str, port: int, remote_cmd: str) -> Iterable[str]
 
 def _docker_save_and_load_over_ssh(user: str, host: str, port: int, image_tag: str) -> Iterable[str]:
     """
-    docker save <image_tag> | ssh user@host "sudo docker load"
+    sudo docker save <image_tag> | ssh user@host "docker load"
     Returns output lines for real-time logging.
+    Uses sudo locally for docker save, but not on remote (docker has permissions there).
     """
-    # 1. Save Docker image to stdout
+    # 1. Save Docker image to stdout (needs sudo locally)
     save = subprocess.Popen(
-        ["docker", "save", image_tag],
+        ["sudo", "docker", "save", image_tag],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     assert save.stdout is not None
 
-    # 2. Load via SSH with sudo, compression, and keep-alive
+    # 2. Load via SSH with compression and keep-alive (no sudo needed on remote)
     load = subprocess.Popen(
         [
             "ssh",
