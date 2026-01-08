@@ -97,6 +97,11 @@ export const pipelineAPI = {
 
   runPipeline: (id: number) =>
     api<{ runId: number }>(`/api/pipelines/${id}/run`, { method: "POST" }),
+
+  deletePipeline: (id: number) =>
+    api<{ ok: boolean; message: string; pipeline_id: number }>(`/api/pipelines/${id}`, {
+      method: "DELETE",
+    }),
 };
 
 export const runAPI = {

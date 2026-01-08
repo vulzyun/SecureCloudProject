@@ -3,6 +3,7 @@ from fastapi.responses import PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 from sqlmodel import Session, select
 from pathlib import Path
+import shutil
 
 from ..db import get_session
 from ..models import Pipeline, Run, RunStatus, User, Role
@@ -195,3 +196,56 @@ def get_pipeline_logs(
         return content
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading log file: {str(e)}")
+
+
+@router.delete(
+    "/pipelines/{pipeline_id}",
+    summary="Delete a pipeline",
+    description="""
+    Delete a pipeline and clean up its workspace directory.
+    
+    **Permissions:** Dev or Admin
+    
+    **Actions performed:**
+    1. Delete pipeline from database
+    2. Remove workspace directory: ~/.cicd/workspaces/{pipeline-name}/
+    3. Remove all associated runs from database
+    
+    **Warning:** This action cannot be undone!
+    """,
+)
+def delete_pipeline(
+    pipeline_id: int,
+    session: Session = Depends(get_session),
+    user: User = Depends(require_role(Role.admin, Role.dev)),
+):
+    """Delete a pipeline and clean up its workspace (dev or admin only)."""
+    # 1. Vérifier que le pipeline existe
+    pipeline = session.get(Pipeline, pipeline_id)
+    if not pipeline:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    
+    # 2. Supprimer tous les runs associés
+    runs = session.exec(select(Run).where(Run.pipeline_id == pipeline_id)).all()
+    for run in runs:
+        session.delete(run)
+    
+    # 3. Supprimer le workspace sur le disque
+    sanitized_name = pipeline.name.lower().replace(" ", "-").replace("_", "-")
+    workspace_path = Path.home() / ".cicd" / "workspaces" / sanitized_name
+    if workspace_path.exists():
+        try:
+            shutil.rmtree(workspace_path)
+        except Exception as e:
+            # Log l'erreur mais continue quand même
+            print(f"Warning: Failed to delete workspace {workspace_path}: {e}")
+    
+    # 4. Supprimer le pipeline de la base
+    session.delete(pipeline)
+    session.commit()
+    
+    return {
+        "ok": True,
+        "message": "Pipeline deleted and workspace cleaned",
+        "pipeline_id": pipeline_id
+    }
