@@ -484,15 +484,35 @@ async def run_real_pipeline(run_id: int):
                         await _log(run_id, step, line, pipeline.name)
                     await _step_ok(run_id, step, pipeline.name)
                     
-                    await _emit(run_id, {"type": "run_failed", "message": "Healthcheck failed - rolled back to previous version"}, pipeline.name)
-                    await _log(run_id, "error", "✅ Rollback successful - Previous version deployed", pipeline.name)
+                    # Healthcheck final after rollback redeploy
+                    step = "healthcheck_rollback"
+                    await _step_start(run_id, step, pipeline.name)
+                    healthcheck_url = f"http://{DEPLOY_HOST}:8080/swagger-ui/index.html"
+                    await _log(run_id, step, f"GET {healthcheck_url}", pipeline.name)
+                    await _log(run_id, step, "Checking if rolled-back version is healthy...", pipeline.name)
+                    
+                    ok_rollback, message_rollback = _healthcheck(healthcheck_url)
+                    if ok_rollback:
+                        await _log(run_id, step, f"✅ Rollback healthcheck OK! {message_rollback}", pipeline.name)
+                        await _step_ok(run_id, step, pipeline.name)
+                        await _emit(run_id, {"type": "run_success"}, pipeline.name)
+                        await _log(run_id, "success", "🎉 Rollback successful - Previous version is healthy!", pipeline.name)
+                        pipeline.status = "success"
+                        run.status = RunStatus.success
+                    else:
+                        await _log(run_id, step, f"❌ Rollback healthcheck FAILED: {message_rollback}", pipeline.name)
+                        await _step_ok(run_id, step, pipeline.name)
+                        await _emit(run_id, {"type": "run_failed", "message": "Rollback deployed but healthcheck failed"}, pipeline.name)
+                        await _log(run_id, "error", "❌ Rollback deployed but previous version failed healthcheck", pipeline.name)
+                        pipeline.status = "failed"
+                        run.status = RunStatus.failed
                 else:
                     await _emit(run_id, {"type": "run_failed", "message": "Healthcheck failed - no previous version to rollback to"}, pipeline.name)
                     await _log(run_id, "error", "❌ Healthcheck failed and no previous version available", pipeline.name)
+                    pipeline.status = "failed"
+                    run.status = RunStatus.failed
                 
-                pipeline.status = "failed"
                 session.add(pipeline)
-                run.status = RunStatus.failed
                 run.finished_at = datetime.utcnow()
                 session.add(run)
                 session.commit()
