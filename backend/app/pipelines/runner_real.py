@@ -1,4 +1,5 @@
 import asyncio
+import os
 import shutil
 import subprocess
 from datetime import datetime
@@ -10,6 +11,19 @@ from sqlmodel import Session
 from ..db import engine
 from ..models import Pipeline, Run, RunStatus
 from .events import bus
+
+
+# ----------------------------
+# Test/Debug: Force failure at specific step
+# ----------------------------
+
+# To test rollback, set this environment variable:
+# FAIL_AT_STEP="deploy_run"  # Will cause error at deploy_run step
+_FAIL_AT_STEP = os.getenv("FAIL_AT_STEP", None)
+
+def _should_fail_at(step: str) -> bool:
+    """Check if we should intentionally fail at this step (for testing rollback)."""
+    return _FAIL_AT_STEP is not None and _FAIL_AT_STEP.strip() == step
 
 
 # ----------------------------
@@ -349,6 +363,10 @@ async def run_real_pipeline(run_id: int):
             step = "maven_tests"
             await _step_start(run_id, step, pipeline.name)
             
+            # For testing: force failure if FAIL_AT_STEP env var is set
+            if _should_fail_at(step):
+                raise RuntimeError(f"🧪 INTENTIONAL FAILURE AT STEP: {step} (for testing rollback)")
+            
             demo_dir = ws / "demo"
             if not demo_dir.exists():
                 await _log(run_id, step, "No demo directory found, skipping tests", pipeline.name)
@@ -371,6 +389,10 @@ async def run_real_pipeline(run_id: int):
             step = "docker_build"
             await _step_start(run_id, step, pipeline.name)
             
+            # For testing: force failure if FAIL_AT_STEP env var is set
+            if _should_fail_at(step):
+                raise RuntimeError(f"🧪 INTENTIONAL FAILURE AT STEP: {step} (for testing rollback)")
+            
             build_context = str(demo_dir) if demo_dir.exists() else str(ws)
             await _log(run_id, step, f"Building Docker image: {image_tag}", pipeline.name)
             await _log(run_id, step, f"Build context: {build_context}", pipeline.name)
@@ -384,6 +406,10 @@ async def run_real_pipeline(run_id: int):
             # STEP: cleanup (AVANT d'envoyer la nouvelle image)
             step = "cleanup_old_deploy"
             await _step_start(run_id, step, pipeline.name)
+            
+            # For testing: force failure if FAIL_AT_STEP env var is set
+            if _should_fail_at(step):
+                raise RuntimeError(f"🧪 INTENTIONAL FAILURE AT STEP: {step} (for testing rollback)")
 
             container_name = sanitized_name
             app_repo = sanitized_name
@@ -427,6 +453,11 @@ async def run_real_pipeline(run_id: int):
             # STEP: ship image (ssh)
             step = "ship_image_ssh"
             await _step_start(run_id, step, pipeline.name)
+            
+            # For testing: force failure if FAIL_AT_STEP env var is set
+            if _should_fail_at(step):
+                raise RuntimeError(f"🧪 INTENTIONAL FAILURE AT STEP: {step} (for testing rollback)")
+            
             await _log(run_id, step, f"📦 Shipping Docker image to {DEPLOY_USER}@{DEPLOY_HOST}", pipeline.name)
             await _log(run_id, step, "This may take several minutes depending on image size...", pipeline.name)
             
@@ -439,6 +470,10 @@ async def run_real_pipeline(run_id: int):
             # STEP: deploy run
             step = "deploy_run"
             await _step_start(run_id, step, pipeline.name)
+            
+            # For testing: force failure if FAIL_AT_STEP env var is set
+            if _should_fail_at(step):
+                raise RuntimeError(f"🧪 INTENTIONAL FAILURE AT STEP: {step} (for testing rollback)")
 
             # Lancer le nouveau conteneur
             run_cmd = (
@@ -458,6 +493,11 @@ async def run_real_pipeline(run_id: int):
             # STEP: healthcheck
             step = "healthcheck"
             await _step_start(run_id, step, pipeline.name)
+            
+            # For testing: force failure if FAIL_AT_STEP env var is set
+            if _should_fail_at(step):
+                raise RuntimeError(f"🧪 INTENTIONAL FAILURE AT STEP: {step} (for testing rollback)")
+            
             healthcheck_url = f"http://{DEPLOY_HOST}:8080/swagger-ui/index.html"
             await _log(run_id, step, f"GET {healthcheck_url}", pipeline.name)
             await _log(run_id, step, "Waiting for container to be ready (timeout: 10s, retries: 30, delay: 2s)...", pipeline.name)
