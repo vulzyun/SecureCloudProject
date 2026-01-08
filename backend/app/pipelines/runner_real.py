@@ -255,16 +255,18 @@ async def _rollback_to_previous(
     previous_state: dict,
     pipeline_name: Optional[str] = None,
 ):
-    """Rollback to the previous container state if it exists."""
+    """Rollback to the previous version by recreating container from saved image."""
     step = "rollback"
     await _step_start(run_id, step, pipeline_name)
     
-    if not previous_state.get("exists"):
-        await _log(run_id, step, "No previous container found, cannot rollback", pipeline_name)
+    if not previous_state.get("exists") or not previous_state.get("image"):
+        await _log(run_id, step, "No previous version found, cannot rollback", pipeline_name)
         await _step_ok(run_id, step, pipeline_name)
         return
     
     try:
+        previous_image = previous_state["image"]
+        
         # Stop and remove the failed new container
         await _log(run_id, step, f"Stopping failed container: {container_name}", pipeline_name)
         stop_cmd = f"docker ps -q --filter 'name=^{container_name}$' | xargs -r docker stop 2>/dev/null || true"
@@ -275,10 +277,18 @@ async def _rollback_to_previous(
         for line in _ssh_exec(user, host, port, remove_cmd):
             pass
         
-        # Restart the previous container
-        await _log(run_id, step, f"Restarting previous container: {previous_state['container_id']}", pipeline_name)
-        restart_cmd = f"docker start {previous_state['container_id']}"
-        for line in _ssh_exec(user, host, port, restart_cmd):
+        # Recreate the previous container from the saved image
+        await _log(run_id, step, f"Recreating container from previous image: {previous_image}", pipeline_name)
+        
+        run_cmd = (
+            f"docker run -d "
+            f"--name {container_name} "
+            f"--restart unless-stopped "
+            f"-p 8080:8080 "
+            f"{previous_image}"
+        )
+        
+        for line in _ssh_exec(user, host, port, run_cmd):
             await _log(run_id, step, line, pipeline_name)
         
         await _log(run_id, step, f"✅ Rollback completed! Previous version restored.", pipeline_name)
