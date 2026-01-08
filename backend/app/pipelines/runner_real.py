@@ -426,14 +426,6 @@ async def run_real_pipeline(run_id: int):
             await _log(run_id, step, f"Workspace: {ws}", pipeline.name)
             await _log(run_id, step, f"Cloning {pipeline.github_url} ({pipeline.branch})", pipeline.name)
             _git_checkout(pipeline.github_url, pipeline.branch, ws)
-            
-            # Get previous commit from git history (HEAD~1)
-            previous_commit = _get_previous_commit_from_history(ws)
-            if previous_commit:
-                await _log(run_id, step, f"📌 Previous commit (HEAD~1): {previous_commit}", pipeline.name)
-            else:
-                await _log(run_id, step, "⚠️ No previous commit found in history (first commit?)", pipeline.name)
-            
             await _step_ok(run_id, step, pipeline.name)
 
             # STEP: tests Maven
@@ -619,7 +611,11 @@ async def run_real_pipeline(run_id: int):
                 await _log(run_id, step, "Triggering rollback...", pipeline.name)
                 await _step_ok(run_id, step, pipeline.name)
                 
-                # Rollback to previous commit from git history (HEAD~1)
+                # Get previous commit from git history (HEAD~1) for rollback
+                previous_commit = _get_previous_commit_from_history(ws)
+                if previous_commit:
+                    await _log(run_id, step, f"📌 Rolling back to HEAD~1: {previous_commit}", pipeline.name)
+                
                 if previous_commit:
                     await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, ws, previous_commit, pipeline.name)
                     
