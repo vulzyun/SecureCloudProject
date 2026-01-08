@@ -18,6 +18,7 @@ export default function Dashboard({ user }: DashboardProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
 
   const isViewer = user.role === "viewer";
   const isDev = user.role === "dev";
@@ -72,6 +73,29 @@ export default function Dashboard({ user }: DashboardProps) {
       await loadPipelines();
     } catch (err: any) {
       setError(err.message || "Erreur lors du lancement du pipeline");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePipeline = async (id: number) => {
+    if (deleteConfirm !== id) {
+      setDeleteConfirm(id);
+      setTimeout(() => setDeleteConfirm(null), 3000);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    setDeleteConfirm(null);
+
+    try {
+      await pipelineAPI.deletePipeline(id);
+      setSuccess("Pipeline supprimé avec succès !");
+      await loadPipelines();
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la suppression du pipeline");
     } finally {
       setLoading(false);
     }
@@ -226,13 +250,26 @@ export default function Dashboard({ user }: DashboardProps) {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{p.created_by || "N/A"}</td>
                       {(isDev || isAdmin) && (
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <button
-                            onClick={() => handleRunPipeline(p.id)}
-                            disabled={loading}
-                            className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-4 rounded-lg disabled:opacity-50"
-                          >
-                            Lancer
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleRunPipeline(p.id)}
+                              disabled={loading}
+                              className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-4 rounded-lg disabled:opacity-50"
+                            >
+                              ▶️ Lancer
+                            </button>
+                            <button
+                              onClick={() => handleDeletePipeline(p.id)}
+                              disabled={loading}
+                              className={`${
+                                deleteConfirm === p.id
+                                  ? "bg-red-700 animate-pulse"
+                                  : "bg-red-600 hover:bg-red-700"
+                              } text-white text-sm font-medium py-2 px-4 rounded-lg disabled:opacity-50`}
+                            >
+                              {deleteConfirm === p.id ? "🗑️ Confirmer ?" : "🗑️ Supprimer"}
+                            </button>
+                          </div>
                         </td>
                       )}
                       <td className="px-6 py-4 whitespace-nowrap">
