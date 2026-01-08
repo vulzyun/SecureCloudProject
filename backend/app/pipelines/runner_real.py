@@ -172,20 +172,29 @@ def _docker_save_and_load_over_ssh(user: str, host: str, port: int, image_tag: s
         raise RuntimeError(f"docker load over ssh failed (exit code {load_rc}):\n" + "".join(output))
 
 
-def _healthcheck(url: str, timeout_sec: int = 2, retries: int = 25, delay_sec: float = 0.5) -> bool:
-    """Simple HTTP GET healthcheck."""
+def _healthcheck(url: str, timeout_sec: int = 10, retries: int = 30, delay_sec: float = 2.0) -> tuple[bool, str]:
+    """
+    Simple HTTP GET healthcheck.
+    Returns (success, message) tuple.
+    """
     import urllib.request
     import time
 
-    for _ in range(retries):
+    last_error = ""
+    for attempt in range(1, retries + 1):
         try:
             with urllib.request.urlopen(url, timeout=timeout_sec) as r:
                 if 200 <= r.status < 300:
-                    return True
-        except Exception:
-            pass
-        time.sleep(delay_sec)
-    return False
+                    return True, f"Success on attempt {attempt}/{retries} (status {r.status})"
+                else:
+                    last_error = f"HTTP {r.status}"
+        except Exception as e:
+            last_error = str(e)
+        
+        if attempt < retries:
+            time.sleep(delay_sec)
+    
+    return False, f"Failed after {retries} attempts. Last error: {last_error}"
 
 
 # ----------------------------
@@ -451,10 +460,12 @@ async def run_real_pipeline(run_id: int):
             await _step_start(run_id, step, pipeline.name)
             healthcheck_url = f"http://{DEPLOY_HOST}:8080/swagger-ui/index.html"
             await _log(run_id, step, f"GET {healthcheck_url}", pipeline.name)
+            await _log(run_id, step, "Waiting for container to be ready (timeout: 10s, retries: 30, delay: 2s)...", pipeline.name)
             
-            ok = _healthcheck(healthcheck_url)
+            ok, message = _healthcheck(healthcheck_url)
             if not ok:
-                await _log(run_id, step, "❌ Healthcheck FAILED - triggering rollback", pipeline.name)
+                await _log(run_id, step, f"❌ Healthcheck FAILED: {message}", pipeline.name)
+                await _log(run_id, step, "Triggering rollback...", pipeline.name)
                 await _step_ok(run_id, step, pipeline.name)
                 
                 # Rollback if healthcheck failed and we have a previous version
@@ -474,7 +485,7 @@ async def run_real_pipeline(run_id: int):
                 session.commit()
                 return
             else:
-                await _log(run_id, step, "✅ Healthcheck OK!", pipeline.name)
+                await _log(run_id, step, f"✅ Healthcheck OK! {message}", pipeline.name)
             await _step_ok(run_id, step, pipeline.name)
 
             # SUCCESS
