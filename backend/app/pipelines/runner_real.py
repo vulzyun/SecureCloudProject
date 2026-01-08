@@ -119,14 +119,14 @@ def _ssh_exec(user: str, host: str, port: int, remote_cmd: str) -> Iterable[str]
 def _docker_save_and_load_over_ssh(user: str, host: str, port: int, image_tag: str) -> None:
     """docker save <image_tag> | ssh user@host "docker load" """
     save = subprocess.Popen(
-        ["sudo", "docker", "save", image_tag],
+        ["docker", "save", image_tag],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
     assert save.stdout is not None
 
     load = subprocess.Popen(
-        ["ssh", "-p", str(port), f"{user}@{host}", "sudo docker load"],
+        ["ssh", "-p", str(port), f"{user}@{host}", "docker load"],
         stdin=save.stdout,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
