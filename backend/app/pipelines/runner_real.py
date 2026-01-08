@@ -1,4 +1,5 @@
 import asyncio
+import os
 import shutil
 import subprocess
 from datetime import datetime
@@ -7,6 +8,7 @@ from typing import Iterable, Optional
 
 from sqlmodel import Session
 
+from ..config import settings
 from ..db import engine
 from ..models import Pipeline, Run, RunStatus
 from .events import bus
@@ -343,6 +345,66 @@ async def run_real_pipeline(run_id: int):
                 await _log(run_id, step, "✅ Tests passed successfully!", pipeline.name)
                 await _step_ok(run_id, step, pipeline.name)
 
+            # STEP: sonarcloud analysis
+            step = "sonarcloud_analysis"
+            await _step_start(run_id, step, pipeline.name)
+            
+            if not demo_dir.exists():
+                await _log(run_id, step, "No demo directory found, skipping SonarCloud", pipeline.name)
+                await _step_ok(run_id, step, pipeline.name)
+            else:
+                await _log(run_id, step, "🔍 Running SonarCloud analysis...", pipeline.name)
+                await _log(run_id, step, "Results will be available on sonarcloud.io", pipeline.name)
+                
+                # Récupérer le token depuis la config
+                sonar_token = settings.sonar_token
+                if not sonar_token:
+                    await _log(run_id, step, "❌ ERROR: SONAR_TOKEN not found in .env file", pipeline.name)
+                    raise RuntimeError("Missing SONAR_TOKEN - please add it to backend/.env")
+                
+                # Préparer l'environnement avec le token
+                env = os.environ.copy()
+                env['SONAR_TOKEN'] = sonar_token
+                
+                # Commande SonarCloud exacte
+                sonar_cmd = [
+                    "./mvnw",
+                    "verify",
+                    "org.sonarsource.scanner.maven:sonar-maven-plugin:sonar",
+                    "-Dsonar.projectKey=vulzyun_bfbarchitecture"
+                ]
+                
+                try:
+                    await _log(run_id, step, f"Command: {' '.join(sonar_cmd)}", pipeline.name)
+                    
+                    # Exécuter avec le token dans l'environnement
+                    p = subprocess.Popen(
+                        sonar_cmd,
+                        cwd=str(demo_dir),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        env=env
+                    )
+                    assert p.stdout is not None
+                    for line in p.stdout:
+                        await _log(run_id, step, line, pipeline.name)
+                    rc = p.wait()
+                    
+                    if rc != 0:
+                        await _log(run_id, step, f"❌ SonarCloud analysis failed with exit code {rc}", pipeline.name)
+                        raise RuntimeError(f"SonarCloud analysis failed ({rc})")
+                    
+                    await _log(run_id, step, "✅ SonarCloud analysis completed successfully!", pipeline.name)
+                    await _log(run_id, step, "📊 View results: https://sonarcloud.io/project/overview?id=vulzyun_bfbarchitecture", pipeline.name)
+                    
+                except Exception as e:
+                    await _log(run_id, step, f"❌ SonarCloud analysis error: {e}", pipeline.name)
+                    raise
+                
+                await _step_ok(run_id, step, pipeline.name)
+
             # STEP: docker build
             step = "docker_build"
             await _step_start(run_id, step, pipeline.name)
@@ -561,5 +623,4 @@ def run_real_pipeline_bg(run_id: int):
     """
     import asyncio
     asyncio.run(run_real_pipeline(run_id))
-
 
