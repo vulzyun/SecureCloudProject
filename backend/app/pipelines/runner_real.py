@@ -226,7 +226,7 @@ async def _rollback_to_previous(
     previous_commit: str,
     pipeline_name: Optional[str] = None,
 ):
-    """Rollback: checkout previous commit, rebuild, and redeploy."""
+    """Rollback: checkout previous commit and redeploy."""
     step = "rollback"
     await _step_start(run_id, step, pipeline_name)
     
@@ -249,13 +249,15 @@ async def _rollback_to_previous(
         # Checkout previous commit
         await _log(run_id, step, f"Checking out previous commit: {previous_commit}", pipeline_name)
         for line in _run_cmd(["git", "checkout", previous_commit], cwd=str(ws)):
-            await _log(run_id, step, line, pipeline_name)
+            # Skip verbose git messages
+            if line.strip() and "HEAD is now at" in line:
+                await _log(run_id, step, line.strip(), pipeline_name)
         
-        await _log(run_id, step, "✅ Rollback completed! Previous version restored.", pipeline_name)
+        await _log(run_id, step, "✅ Rollback checkout completed.", pipeline_name)
         await _step_ok(run_id, step, pipeline_name)
         
     except Exception as e:
-        await _log(run_id, step, f"⚠️ Rollback failed: {e}", pipeline_name)
+        await _log(run_id, step, f"⚠️ Rollback checkout failed: {e}", pipeline_name)
 
 
 # ----------------------------
@@ -445,8 +447,45 @@ async def run_real_pipeline(run_id: int):
                 # Rollback if we have a previous commit
                 if previous_commit:
                     await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, ws, previous_commit, pipeline.name)
+                    
+                    # After rollback checkout, rebuild and redeploy
+                    await _log(run_id, "rollback", "Now rebuilding and redeploying...", pipeline.name)
+                    
+                    # Docker build
+                    step = "docker_build"
+                    await _step_start(run_id, step, pipeline.name)
+                    demo_dir = ws / "demo"
+                    build_context = str(demo_dir) if demo_dir.exists() else str(ws)
+                    await _log(run_id, step, f"Building Docker image: {image_tag}", pipeline.name)
+                    
+                    for line in _run_cmd(["sudo", "docker", "build", "-t", image_tag, build_context]):
+                        await _log(run_id, step, line, pipeline.name)
+                    await _step_ok(run_id, step, pipeline.name)
+                    
+                    # Ship image
+                    step = "ship_image_ssh"
+                    await _step_start(run_id, step, pipeline.name)
+                    for line in _docker_save_and_load_over_ssh(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, image_tag):
+                        await _log(run_id, step, line, pipeline.name)
+                    await _step_ok(run_id, step, pipeline.name)
+                    
+                    # Deploy
+                    step = "deploy_run"
+                    await _step_start(run_id, step, pipeline.name)
+                    run_cmd = (
+                        f"docker run -d "
+                        f"--name {container_name} "
+                        f"--restart unless-stopped "
+                        f"-p 8080:8080 "
+                        f"{image_tag}"
+                    )
+                    await _log(run_id, step, f"Starting container: {container_name}", pipeline.name)
+                    for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, run_cmd):
+                        await _log(run_id, step, line, pipeline.name)
+                    await _step_ok(run_id, step, pipeline.name)
+                    
                     await _emit(run_id, {"type": "run_failed", "message": "Healthcheck failed - rolled back to previous version"}, pipeline.name)
-                    await _log(run_id, "error", "⚠️ Healthcheck failed - Previous version restored", pipeline.name)
+                    await _log(run_id, "error", "✅ Rollback successful - Previous version deployed", pipeline.name)
                 else:
                     await _emit(run_id, {"type": "run_failed", "message": "Healthcheck failed - no previous version to rollback to"}, pipeline.name)
                     await _log(run_id, "error", "❌ Healthcheck failed and no previous version available", pipeline.name)
