@@ -178,8 +178,8 @@ async def run_real_pipeline(run_id: int):
       7) Healthcheck
     """
     # Configuration SSH en dur
-    DEPLOY_USER = "cloudprojet"
-    DEPLOY_HOST = "100.68.111.86"
+    DEPLOY_USER = "mohamed"
+    DEPLOY_HOST = "188.166.77.14"
     DEPLOY_PORT = 22
     
     with Session(engine) as session:
