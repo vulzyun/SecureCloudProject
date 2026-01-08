@@ -203,11 +203,11 @@ def _healthcheck(url: str, timeout_sec: int = 10, retries: int = 30, delay_sec: 
 # Helpers: Rollback & State Management
 # ----------------------------
 
-def _save_previous_commit(ws: Path) -> Optional[str]:
-    """Save the current git commit hash (before updating to new version)."""
+def _get_previous_commit_from_history(ws: Path) -> Optional[str]:
+    """Get the commit hash of HEAD~1 (previous commit in git history)."""
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", "rev-parse", "HEAD~1"],
             cwd=str(ws),
             capture_output=True,
             text=True,
@@ -415,13 +415,6 @@ async def run_real_pipeline(run_id: int):
         
         # Initialize workspace
         ws = _workspace(pipeline.name)
-        
-        # Save previous commit BEFORE checkout
-        previous_commit = None
-        if ws.exists():
-            previous_commit = _save_previous_commit(ws)
-            if previous_commit:
-                await _emit(run_id, {"type": "log", "step": "init", "message": f"📌 Saved previous commit: {previous_commit}"}, pipeline.name)
 
         try:
             await _emit(run_id, {"type": "run_start"}, pipeline.name)
@@ -433,6 +426,14 @@ async def run_real_pipeline(run_id: int):
             await _log(run_id, step, f"Workspace: {ws}", pipeline.name)
             await _log(run_id, step, f"Cloning {pipeline.github_url} ({pipeline.branch})", pipeline.name)
             _git_checkout(pipeline.github_url, pipeline.branch, ws)
+            
+            # Get previous commit from git history (HEAD~1)
+            previous_commit = _get_previous_commit_from_history(ws)
+            if previous_commit:
+                await _log(run_id, step, f"📌 Previous commit (HEAD~1): {previous_commit}", pipeline.name)
+            else:
+                await _log(run_id, step, "⚠️ No previous commit found in history (first commit?)", pipeline.name)
+            
             await _step_ok(run_id, step, pipeline.name)
 
             # STEP: tests Maven
@@ -618,7 +619,7 @@ async def run_real_pipeline(run_id: int):
                 await _log(run_id, step, "Triggering rollback...", pipeline.name)
                 await _step_ok(run_id, step, pipeline.name)
                 
-                # Rollback if we have a previous commit
+                # Rollback to previous commit from git history (HEAD~1)
                 if previous_commit:
                     await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, ws, previous_commit, pipeline.name)
                     
@@ -645,8 +646,8 @@ async def run_real_pipeline(run_id: int):
                         pipeline.status = "failed"
                         run.status = RunStatus.failed
                 else:
-                    await _emit(run_id, {"type": "run_failed", "message": "Healthcheck failed - no previous version to rollback to"}, pipeline.name)
-                    await _log(run_id, "error", "❌ Healthcheck failed and no previous version available", pipeline.name)
+                    await _emit(run_id, {"type": "run_failed", "message": "Healthcheck failed - no previous commit in git history"}, pipeline.name)
+                    await _log(run_id, "error", "❌ Healthcheck failed and no previous commit available (first commit?)", pipeline.name)
                     pipeline.status = "failed"
                     run.status = RunStatus.failed
                 
@@ -677,12 +678,14 @@ async def run_real_pipeline(run_id: int):
             await _emit(run_id, {"type": "run_failed", "message": str(e)}, pipeline.name)
             await _log(run_id, "error", f"❌ Pipeline FAILED: {e}", pipeline.name)
             
-            # Try to rollback if we have a previous commit
+            # Get previous commit from git history (HEAD~1) and attempt rollback
+            previous_commit = _get_previous_commit_from_history(ws)
+            
             if previous_commit:
-                await _log(run_id, "error", "⚠️ Attempting rollback to previous commit...", pipeline.name)
+                await _log(run_id, "error", f"⚠️ Attempting rollback to previous commit from git history: {previous_commit}", pipeline.name)
                 await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, ws, previous_commit, pipeline.name)
             else:
-                await _log(run_id, "error", "⚠️ No previous commit available for rollback", pipeline.name)
+                await _log(run_id, "error", "⚠️ No previous commit in git history (first commit?)", pipeline.name)
             
             pipeline.status = "failed"
             session.add(pipeline)
