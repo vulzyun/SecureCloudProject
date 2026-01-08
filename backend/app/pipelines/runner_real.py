@@ -228,17 +228,17 @@ async def _rollback_to_previous(
     previous_commit: str,
     pipeline_name: Optional[str] = None,
 ):
-    """Rollback: checkout previous commit and redeploy."""
-    step = "rollback"
+    """Rollback: checkout previous commit and REDO the entire pipeline."""
+    step = "rollback_checkout"
     await _step_start(run_id, step, pipeline_name)
     
     if not previous_commit:
-        await _log(run_id, step, "No previous commit available, cannot rollback", pipeline_name)
+        await _log(run_id, step, "❌ No previous commit available, cannot rollback", pipeline_name)
         await _step_ok(run_id, step, pipeline_name)
         return
     
     try:
-        # Stop and remove the failed new container
+        # Stop and remove the failed container
         await _log(run_id, step, f"Stopping failed container: {container_name}", pipeline_name)
         stop_cmd = f"docker ps -q --filter 'name=^{container_name}$' | xargs -r docker stop 2>/dev/null || true"
         for line in _ssh_exec(user, host, port, stop_cmd):
@@ -249,17 +249,129 @@ async def _rollback_to_previous(
             pass
         
         # Checkout previous commit
-        await _log(run_id, step, f"Checking out previous commit: {previous_commit}", pipeline_name)
+        await _log(run_id, step, f"🔄 Checking out previous commit: {previous_commit}", pipeline_name)
         for line in _run_cmd(["git", "checkout", previous_commit], cwd=str(ws)):
-            # Skip verbose git messages
             if line.strip() and "HEAD is now at" in line:
                 await _log(run_id, step, line.strip(), pipeline_name)
         
-        await _log(run_id, step, "✅ Rollback checkout completed.", pipeline_name)
+        await _log(run_id, step, "✅ Rollback checkout completed - now rerunning pipeline...", pipeline_name)
+        await _step_ok(run_id, step, pipeline_name)
+        
+        # 🔄 REFAIRE TOUT LE PIPELINE avec le commit précédent
+        sanitized_name = _sanitize_name(pipeline_name)
+        rollback_image_tag = f"{sanitized_name}:rollback-{run_id}"
+        demo_dir = ws / "demo"
+        
+        # STEP: Maven tests (rollback)
+        step = "rollback_maven_tests"
+        await _step_start(run_id, step, pipeline_name)
+        
+        if not demo_dir.exists():
+            await _log(run_id, step, "No demo directory found, skipping tests", pipeline_name)
+            await _step_ok(run_id, step, pipeline_name)
+        else:
+            # Build
+            await _log(run_id, step, "Building with Maven (./mvnw -B clean compile)...", pipeline_name)
+            for line in _run_cmd(["./mvnw", "-B", "clean", "compile"], cwd=str(demo_dir)):
+                await _log(run_id, step, line, pipeline_name)
+            
+            # Tests
+            await _log(run_id, step, "Running tests (./mvnw -B test)...", pipeline_name)
+            for line in _run_cmd(["./mvnw", "-B", "test"], cwd=str(demo_dir)):
+                await _log(run_id, step, line, pipeline_name)
+            
+            await _log(run_id, step, "✅ Tests passed!", pipeline_name)
+            await _step_ok(run_id, step, pipeline_name)
+        
+        # STEP: SonarCloud (rollback)
+        step = "rollback_sonarcloud"
+        await _step_start(run_id, step, pipeline_name)
+        
+        if not demo_dir.exists():
+            await _log(run_id, step, "No demo directory, skipping SonarCloud", pipeline_name)
+            await _step_ok(run_id, step, pipeline_name)
+        else:
+            await _log(run_id, step, "🔍 Running SonarCloud analysis...", pipeline_name)
+            
+            sonar_token = settings.sonar_token
+            if not sonar_token:
+                await _log(run_id, step, "⚠️ SONAR_TOKEN not found, skipping", pipeline_name)
+                await _step_ok(run_id, step, pipeline_name)
+            else:
+                import os
+                env = os.environ.copy()
+                env['SONAR_TOKEN'] = sonar_token
+                
+                sonar_cmd = [
+                    "./mvnw", "verify",
+                    "org.sonarsource.scanner.maven:sonar-maven-plugin:sonar",
+                    "-Dsonar.projectKey=vulzyun_bfbarchitecture"
+                ]
+                
+                try:
+                    p = subprocess.Popen(
+                        sonar_cmd, cwd=str(demo_dir),
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, bufsize=1, env=env
+                    )
+                    assert p.stdout is not None
+                    for line in p.stdout:
+                        await _log(run_id, step, line, pipeline_name)
+                    rc = p.wait()
+                    
+                    if rc != 0:
+                        await _log(run_id, step, f"⚠️ SonarCloud failed (code {rc}) - continuing rollback", pipeline_name)
+                    else:
+                        await _log(run_id, step, "✅ SonarCloud completed", pipeline_name)
+                except Exception as e:
+                    await _log(run_id, step, f"⚠️ SonarCloud error: {e} - continuing", pipeline_name)
+                
+                await _step_ok(run_id, step, pipeline_name)
+        
+        # STEP: Docker build (rollback)
+        step = "rollback_docker_build"
+        await _step_start(run_id, step, pipeline_name)
+        
+        build_context = str(demo_dir) if demo_dir.exists() else str(ws)
+        await _log(run_id, step, f"Building Docker image: {rollback_image_tag}", pipeline_name)
+        
+        for line in _run_cmd(["sudo", "docker", "build", "-t", rollback_image_tag, build_context]):
+            await _log(run_id, step, line, pipeline_name)
+        
+        await _log(run_id, step, "✅ Docker image built!", pipeline_name)
+        await _step_ok(run_id, step, pipeline_name)
+        
+        # STEP: Ship image (rollback)
+        step = "rollback_ship_image"
+        await _step_start(run_id, step, pipeline_name)
+        
+        await _log(run_id, step, f"Shipping image to {user}@{host}", pipeline_name)
+        for line in _docker_save_and_load_over_ssh(user, host, port, rollback_image_tag):
+            await _log(run_id, step, line, pipeline_name)
+        
+        await _log(run_id, step, "✅ Image transferred!", pipeline_name)
+        await _step_ok(run_id, step, pipeline_name)
+        
+        # STEP: Deploy (rollback)
+        step = "rollback_deploy"
+        await _step_start(run_id, step, pipeline_name)
+        
+        run_cmd = (
+            f"docker run -d "
+            f"--name {container_name} "
+            f"--restart unless-stopped "
+            f"-p 8080:8080 "
+            f"{rollback_image_tag}"
+        )
+        
+        await _log(run_id, step, f"Starting rollback container: {container_name}", pipeline_name)
+        for line in _ssh_exec(user, host, port, run_cmd):
+            await _log(run_id, step, line, pipeline_name)
+        
         await _step_ok(run_id, step, pipeline_name)
         
     except Exception as e:
-        await _log(run_id, step, f"⚠️ Rollback checkout failed: {e}", pipeline_name)
+        await _log(run_id, step, f"❌ Rollback failed: {e}", pipeline_name)
 
 
 # ----------------------------
