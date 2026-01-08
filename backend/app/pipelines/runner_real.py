@@ -323,7 +323,9 @@ async def run_real_pipeline(run_id: int):
             await _log(run_id, step, f"📦 Shipping Docker image to {DEPLOY_USER}@{DEPLOY_HOST}", pipeline.name)
             await _log(run_id, step, "This may take several minutes depending on image size...", pipeline.name)
             
-            _docker_save_and_load_over_ssh(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, image_tag)
+            for line in _docker_save_and_load_over_ssh(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, image_tag):
+                await _log(run_id, step, line, pipeline.name)
+            
             await _log(run_id, step, f"✅ Image {image_tag} successfully transferred!", pipeline.name)
             await _step_ok(run_id, step, pipeline.name)
 
