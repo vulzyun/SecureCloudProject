@@ -119,14 +119,14 @@ def _ssh_exec(user: str, host: str, port: int, remote_cmd: str) -> Iterable[str]
 def _docker_save_and_load_over_ssh(user: str, host: str, port: int, image_tag: str) -> None:
     """docker save <image_tag> | ssh user@host "docker load" """
     save = subprocess.Popen(
-        ["docker", "save", image_tag],
+        ["sudo", "docker", "save", image_tag],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
     assert save.stdout is not None
 
     load = subprocess.Popen(
-        ["ssh", "-p", str(port), f"{user}@{host}", "docker load"],
+        ["ssh", "-p", str(port), f"{user}@{host}", "sudo docker load"],
         stdin=save.stdout,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -243,7 +243,7 @@ async def run_real_pipeline(run_id: int):
             await _log(run_id, step, f"Building Docker image: {image_tag}", pipeline.name)
             await _log(run_id, step, f"Build context: {build_context}", pipeline.name)
             
-            for line in _run_cmd(["docker", "build", "-t", image_tag, build_context]):
+            for line in _run_cmd(["sudo", "docker", "build", "-t", image_tag, build_context]):
                 await _log(run_id, step, line, pipeline.name)
             
             await _log(run_id, step, "✅ Docker image built successfully!", pipeline.name)
