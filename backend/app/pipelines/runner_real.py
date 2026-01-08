@@ -622,43 +622,7 @@ async def run_real_pipeline(run_id: int):
                 if previous_commit:
                     await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, ws, previous_commit, pipeline.name)
                     
-                    # After rollback checkout, rebuild and redeploy
-                    await _log(run_id, "rollback", "Now rebuilding and redeploying...", pipeline.name)
-                    
-                    # Docker build
-                    step = "docker_build"
-                    await _step_start(run_id, step, pipeline.name)
-                    demo_dir = ws / "demo"
-                    build_context = str(demo_dir) if demo_dir.exists() else str(ws)
-                    await _log(run_id, step, f"Building Docker image: {image_tag}", pipeline.name)
-                    
-                    for line in _run_cmd(["sudo", "docker", "build", "-t", image_tag, build_context]):
-                        await _log(run_id, step, line, pipeline.name)
-                    await _step_ok(run_id, step, pipeline.name)
-                    
-                    # Ship image
-                    step = "ship_image_ssh"
-                    await _step_start(run_id, step, pipeline.name)
-                    for line in _docker_save_and_load_over_ssh(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, image_tag):
-                        await _log(run_id, step, line, pipeline.name)
-                    await _step_ok(run_id, step, pipeline.name)
-                    
-                    # Deploy
-                    step = "deploy_run"
-                    await _step_start(run_id, step, pipeline.name)
-                    run_cmd = (
-                        f"docker run -d "
-                        f"--name {container_name} "
-                        f"--restart unless-stopped "
-                        f"-p 8080:8080 "
-                        f"{image_tag}"
-                    )
-                    await _log(run_id, step, f"Starting container: {container_name}", pipeline.name)
-                    for line in _ssh_exec(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, run_cmd):
-                        await _log(run_id, step, line, pipeline.name)
-                    await _step_ok(run_id, step, pipeline.name)
-                    
-                    # Healthcheck final after rollback redeploy
+                    # Healthcheck after rollback (rollback function already deployed everything)
                     step = "healthcheck_rollback"
                     await _step_start(run_id, step, pipeline.name)
                     healthcheck_url = f"http://{DEPLOY_HOST}:8080/swagger-ui/index.html"
