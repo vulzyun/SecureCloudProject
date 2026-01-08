@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import type { User, Pipeline } from "../types";
 import { pipelineAPI } from "../api";
 import AdminPanel from "../components/AdminPanel";
+import RoleRequestPanel from "../components/RoleRequestPanel";
 
 interface DashboardProps {
   user: User;
@@ -89,6 +90,11 @@ export default function Dashboard({ user }: DashboardProps) {
     }
   };
 
+  const handleRoleRequestSuccess = () => {
+    // Reload user info if needed - in real app, you'd fetch updated user
+    // For now, just show success message
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm border-b">
@@ -120,12 +126,15 @@ export default function Dashboard({ user }: DashboardProps) {
           </div>
         )}
 
+        {/* Role Request Panel for non-admin users */}
+        {!isAdmin && <RoleRequestPanel user={user} onSuccess={handleRoleRequestSuccess} />}
+
         {isViewer && (
           <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-6">
             <h3 className="font-semibold text-yellow-800 mb-2">Accès lecture seule</h3>
             <p className="text-yellow-700 text-sm">
               Vous pouvez consulter les pipelines, mais pas créer/lancer. 
-              Contactez un administrateur pour obtenir le rôle Developer.
+              Demandez une promotion vers le rôle Developer ci-dessus.
             </p>
           </div>
         )}

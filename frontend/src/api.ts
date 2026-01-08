@@ -1,4 +1,4 @@
-import type { User, Pipeline } from "./types";
+import type { User, Pipeline, RoleRequest } from "./types";
 
 // Détection : si on est chargé via oauth2-proxy, window.location.hostname sera celui d'oauth2-proxy
 // On vérifie aussi si le document a été chargé avec des headers oauth2-proxy
@@ -52,6 +52,31 @@ export const userAPI = {
     api<{ ok: boolean; id: number; role: string }>(`/api/admin/users/${userId}/role`, {
       method: "PUT",
       body: JSON.stringify({ role }),
+    }),
+
+  // ===== ROLE REQUESTS =====
+  requestRole: (requestedRole: string) =>
+    api<RoleRequest>("/api/users/me/request-role", {
+      method: "POST",
+      body: JSON.stringify({ requested_role: requestedRole }),
+    }),
+
+  getMyRequests: () => api<RoleRequest[]>("/api/users/me/requests"),
+
+  getAvailableRoles: () => api<string[]>("/api/users/me/available-roles"),
+
+  // Admin only
+  getAllRoleRequests: () => api<RoleRequest[]>("/api/admin/role-requests"),
+
+  approveRoleRequest: (requestId: number) =>
+    api<{ ok: boolean; request_id: number; user_id: number; new_role: string }>(
+      `/api/admin/role-requests/${requestId}/approve`,
+      { method: "PUT" }
+    ),
+
+  rejectRoleRequest: (requestId: number) =>
+    api<{ ok: boolean; request_id: number }>(`/api/admin/role-requests/${requestId}/reject`, {
+      method: "PUT",
     }),
 };
 

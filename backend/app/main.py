@@ -5,6 +5,7 @@ from .db import init_db
 from .auth.routes import router as auth_router
 from .pipelines.routes import router as pipelines_router
 from .auth.admin_routes import router as admin_router
+from .users.routes import router as users_router
 
 app = FastAPI(title="CI/CD API")
 
@@ -58,4 +59,5 @@ def health():
 
 app.include_router(auth_router)
 app.include_router(pipelines_router)
-app.include_router(admin_router)  # ✅
+app.include_router(admin_router)
+app.include_router(users_router)

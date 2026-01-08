@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from ..db import get_session
-from ..models import User, Role
+from ..models import User, Role, RoleRequest, RequestStatus
 from .proxy import require_role
 
 router = APIRouter(prefix="/api/admin", tags=["Admin - User Management"])
@@ -189,3 +189,149 @@ def set_role(
     session.commit()
     session.refresh(u)
     return {"ok": True, "id": u.id, "role": u.role}
+
+# ========================
+# ROLE REQUEST MANAGEMENT
+# ========================
+
+@router.get(
+    "/role-requests",
+    summary="List all pending role requests",
+    description="""
+    Retrieve a list of all pending role requests in the system.
+    
+    **Permissions:** Admin only
+    
+    Returns role requests with user information.
+    """,
+    responses={
+        200: {
+            "description": "List of role requests",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "id": 1,
+                            "user_id": 2,
+                            "requested_role": "admin",
+                            "status": "pending",
+                            "created_at": "2026-01-08T10:30:00Z",
+                            "updated_at": "2026-01-08T10:30:00Z"
+                        }
+                    ]
+                }
+            }
+        },
+        403: {"description": "Forbidden - Admin access required"}
+    }
+)
+def list_role_requests(
+    session: Session = Depends(get_session),
+    _: User = Depends(require_role(Role.admin)),
+):
+    """List all pending role requests (admin only)."""
+    requests = session.exec(
+        select(RoleRequest)
+        .where(RoleRequest.status == RequestStatus.pending)
+        .order_by(RoleRequest.created_at.asc())
+    ).all()
+    return requests
+
+@router.put(
+    "/role-requests/{request_id}/approve",
+    summary="Approve a role request",
+    description="""
+    Approve a role request and update the user's role accordingly.
+    
+    **Permissions:** Admin only
+    """,
+    responses={
+        200: {
+            "description": "Role request approved and user role updated",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "ok": True,
+                        "request_id": 1,
+                        "user_id": 2,
+                        "new_role": "admin"
+                    }
+                }
+            }
+        },
+        403: {"description": "Forbidden - Admin access required"},
+        404: {"description": "Role request not found"}
+    }
+)
+def approve_role_request(
+    request_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(require_role(Role.admin)),
+):
+    """Approve a role request (admin only)."""
+    role_request = session.get(RoleRequest, request_id)
+    if not role_request:
+        raise HTTPException(status_code=404, detail="Role request not found")
+    
+    # Récupérer l'utilisateur
+    user = session.get(User, role_request.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Mettre à jour le rôle de l'utilisateur
+    user.role = role_request.requested_role
+    role_request.status = RequestStatus.approved
+    
+    session.add(user)
+    session.add(role_request)
+    session.commit()
+    
+    return {
+        "ok": True,
+        "request_id": role_request.id,
+        "user_id": user.id,
+        "new_role": user.role
+    }
+
+@router.put(
+    "/role-requests/{request_id}/reject",
+    summary="Reject a role request",
+    description="""
+    Reject a role request.
+    
+    **Permissions:** Admin only
+    """,
+    responses={
+        200: {
+            "description": "Role request rejected",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "ok": True,
+                        "request_id": 1
+                    }
+                }
+            }
+        },
+        403: {"description": "Forbidden - Admin access required"},
+        404: {"description": "Role request not found"}
+    }
+)
+def reject_role_request(
+    request_id: int,
+    session: Session = Depends(get_session),
+    _: User = Depends(require_role(Role.admin)),
+):
+    """Reject a role request (admin only)."""
+    role_request = session.get(RoleRequest, request_id)
+    if not role_request:
+        raise HTTPException(status_code=404, detail="Role request not found")
+    
+    role_request.status = RequestStatus.rejected
+    session.add(role_request)
+    session.commit()
+    
+    return {
+        "ok": True,
+        "request_id": role_request.id
+    }
