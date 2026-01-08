@@ -201,49 +201,19 @@ def _healthcheck(url: str, timeout_sec: int = 10, retries: int = 30, delay_sec: 
 # Helpers: Rollback & State Management
 # ----------------------------
 
-def _get_running_container(user: str, host: str, port: int, container_name: str) -> Optional[str]:
-    """Get the running container ID for a given container name. Returns None if not found."""
-    cmd = f"docker ps -q --filter 'name=^{container_name}$'"
+def _save_previous_commit(ws: Path) -> Optional[str]:
+    """Save the current git commit hash (before updating to new version)."""
     try:
-        for line in _ssh_exec(user, host, port, cmd):
-            container_id = line.strip()
-            if container_id:
-                return container_id
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(ws),
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return result.stdout.strip()
     except Exception:
-        pass
-    return None
-
-
-def _get_container_image(user: str, host: str, port: int, container_id: str) -> Optional[str]:
-    """Get the image ID/tag of a running container."""
-    cmd = f"docker inspect --format='{{.Image}}' {container_id}"
-    try:
-        for line in _ssh_exec(user, host, port, cmd):
-            image = line.strip()
-            if image:
-                return image
-    except Exception:
-        pass
-    return None
-
-
-def _save_previous_state(user: str, host: str, port: int, container_name: str) -> dict:
-    """Save the current container state before deploying new version."""
-    state = {
-        "container_id": None,
-        "image": None,
-        "exists": False,
-    }
-    
-    container_id = _get_running_container(user, host, port, container_name)
-    if container_id:
-        state["container_id"] = container_id
-        state["exists"] = True
-        image = _get_container_image(user, host, port, container_id)
-        if image:
-            state["image"] = image
-    
-    return state
+        return None
 
 
 async def _rollback_to_previous(
@@ -252,21 +222,20 @@ async def _rollback_to_previous(
     host: str,
     port: int,
     container_name: str,
-    previous_state: dict,
+    ws: Path,
+    previous_commit: str,
     pipeline_name: Optional[str] = None,
 ):
-    """Rollback to the previous version by recreating container from saved image."""
+    """Rollback: checkout previous commit, rebuild, and redeploy."""
     step = "rollback"
     await _step_start(run_id, step, pipeline_name)
     
-    if not previous_state.get("exists") or not previous_state.get("image"):
-        await _log(run_id, step, "No previous version found, cannot rollback", pipeline_name)
+    if not previous_commit:
+        await _log(run_id, step, "No previous commit available, cannot rollback", pipeline_name)
         await _step_ok(run_id, step, pipeline_name)
         return
     
     try:
-        previous_image = previous_state["image"]
-        
         # Stop and remove the failed new container
         await _log(run_id, step, f"Stopping failed container: {container_name}", pipeline_name)
         stop_cmd = f"docker ps -q --filter 'name=^{container_name}$' | xargs -r docker stop 2>/dev/null || true"
@@ -277,26 +246,16 @@ async def _rollback_to_previous(
         for line in _ssh_exec(user, host, port, remove_cmd):
             pass
         
-        # Recreate the previous container from the saved image
-        await _log(run_id, step, f"Recreating container from previous image: {previous_image}", pipeline_name)
-        
-        run_cmd = (
-            f"docker run -d "
-            f"--name {container_name} "
-            f"--restart unless-stopped "
-            f"-p 8080:8080 "
-            f"{previous_image}"
-        )
-        
-        for line in _ssh_exec(user, host, port, run_cmd):
+        # Checkout previous commit
+        await _log(run_id, step, f"Checking out previous commit: {previous_commit}", pipeline_name)
+        for line in _run_cmd(["git", "checkout", previous_commit], cwd=str(ws)):
             await _log(run_id, step, line, pipeline_name)
         
-        await _log(run_id, step, f"✅ Rollback completed! Previous version restored.", pipeline_name)
+        await _log(run_id, step, "✅ Rollback completed! Previous version restored.", pipeline_name)
         await _step_ok(run_id, step, pipeline_name)
         
     except Exception as e:
         await _log(run_id, step, f"⚠️ Rollback failed: {e}", pipeline_name)
-        # Don't raise here, we already have a failed run
 
 
 # ----------------------------
@@ -337,11 +296,16 @@ async def run_real_pipeline(run_id: int):
         sanitized_name = _sanitize_name(pipeline.name)
         image_tag = f"{sanitized_name}:run-{run_id}"
         container_name = sanitized_name
-
-        # Save the previous deployment state for potential rollback
-        previous_state = _save_previous_state(DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name)
-        if previous_state.get("exists"):
-            await _emit(run_id, {"type": "log", "step": "init", "message": f"📌 Saved previous container state: {previous_state['container_id']}"}, pipeline.name)
+        
+        # Initialize workspace
+        ws = _workspace(pipeline.name)
+        
+        # Save previous commit BEFORE checkout
+        previous_commit = None
+        if ws.exists():
+            previous_commit = _save_previous_commit(ws)
+            if previous_commit:
+                await _emit(run_id, {"type": "log", "step": "init", "message": f"📌 Saved previous commit: {previous_commit}"}, pipeline.name)
 
         try:
             await _emit(run_id, {"type": "run_start"}, pipeline.name)
@@ -478,9 +442,9 @@ async def run_real_pipeline(run_id: int):
                 await _log(run_id, step, "Triggering rollback...", pipeline.name)
                 await _step_ok(run_id, step, pipeline.name)
                 
-                # Rollback if healthcheck failed and we have a previous version
-                if previous_state.get("exists"):
-                    await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, previous_state, pipeline.name)
+                # Rollback if we have a previous commit
+                if previous_commit:
+                    await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, ws, previous_commit, pipeline.name)
                     await _emit(run_id, {"type": "run_failed", "message": "Healthcheck failed - rolled back to previous version"}, pipeline.name)
                     await _log(run_id, "error", "⚠️ Healthcheck failed - Previous version restored", pipeline.name)
                 else:
@@ -516,12 +480,12 @@ async def run_real_pipeline(run_id: int):
             await _emit(run_id, {"type": "run_failed", "message": str(e)}, pipeline.name)
             await _log(run_id, "error", f"❌ Pipeline FAILED: {e}", pipeline.name)
             
-            # Try to rollback if we have a previous version
-            if previous_state.get("exists"):
-                await _log(run_id, "error", "⚠️ Attempting rollback to previous version...", pipeline.name)
-                await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, previous_state, pipeline.name)
+            # Try to rollback if we have a previous commit
+            if previous_commit:
+                await _log(run_id, "error", "⚠️ Attempting rollback to previous commit...", pipeline.name)
+                await _rollback_to_previous(run_id, DEPLOY_USER, DEPLOY_HOST, DEPLOY_PORT, sanitized_name, ws, previous_commit, pipeline.name)
             else:
-                await _log(run_id, "error", "⚠️ No previous version available for rollback", pipeline.name)
+                await _log(run_id, "error", "⚠️ No previous commit available for rollback", pipeline.name)
             
             pipeline.status = "failed"
             session.add(pipeline)
