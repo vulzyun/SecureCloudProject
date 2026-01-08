@@ -296,11 +296,7 @@ async def run_real_pipeline(run_id: int):
       7) Healthcheck
     """
     # Configuration SSH en dur
-<<<<<<< HEAD
-    DEPLOY_USER = "mohammed"
-=======
     DEPLOY_USER = "mohamed"
->>>>>>> d267ec06fd9ddefd70625f5249ade15c2be66ab8
     DEPLOY_HOST = "188.166.77.14"
     DEPLOY_PORT = 22
     
