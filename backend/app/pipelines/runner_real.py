@@ -352,7 +352,7 @@ async def run_real_pipeline(run_id: int):
             # STEP: healthcheck
             step = "healthcheck"
             await _step_start(run_id, step, pipeline.name)
-            healthcheck_url = f"http://{DEPLOY_HOST}:8080/health"
+            healthcheck_url = f"http://{DEPLOY_HOST}:8080/swagger-ui/index.html"
             await _log(run_id, step, f"GET {healthcheck_url}", pipeline.name)
             
             ok = _healthcheck(healthcheck_url)
