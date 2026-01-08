@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from ..db import get_session
-from ..models import User, Role, RoleRequest, RequestStatus
+from ..models import User, Role, RoleRequest, RequestStatus, Pipeline
 from .proxy import require_role
 
 router = APIRouter(prefix="/api/admin", tags=["Admin - User Management"])
@@ -189,6 +189,92 @@ def set_role(
     session.commit()
     session.refresh(u)
     return {"ok": True, "id": u.id, "role": u.role}
+
+@router.delete(
+    "/users/{user_id}",
+    summary="Delete a user",
+    description="""
+    Delete a user from the system.
+    
+    **Permissions:** Admin only
+    
+    **Behavior:**
+    - Deletes the user account
+    - Deletes all pending and rejected role requests for this user
+    - Approved role requests are kept for audit purposes
+    - Pipelines created by the user are preserved (created_by field is cleared)
+    - Runs created by the user are preserved (created_by field is cleared)
+    
+    **Note:** An admin cannot delete themselves. At least one admin must remain in the system.
+    """,
+    responses={
+        200: {
+            "description": "User deleted successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "ok": True,
+                        "id": 2,
+                        "username": "john_doe",
+                        "deleted_role_requests": 2
+                    }
+                }
+            }
+        },
+        400: {"description": "Bad request - Cannot delete the last admin or yourself"},
+        403: {"description": "Forbidden - Admin access required"},
+        404: {"description": "User not found"}
+    }
+)
+def delete_user(
+    user_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(require_role(Role.admin)),
+):
+    """Delete a user (admin only)."""
+    # Récupérer l'utilisateur à supprimer
+    user_to_delete = session.get(User, user_id)
+    if not user_to_delete:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Empêcher un admin de se supprimer lui-même
+    if current_user.id == user_id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    
+    # Empêcher de supprimer le dernier admin
+    if user_to_delete.role == Role.admin:
+        admin_count = session.exec(select(User).where(User.role == Role.admin)).all()
+        if len(admin_count) <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last admin user")
+    
+    # Supprimer les demandes de rôle associées (sauf les approbations pour audit)
+    role_requests = session.exec(
+        select(RoleRequest).where(RoleRequest.user_id == user_id)
+    ).all()
+    deleted_requests = 0
+    for request in role_requests:
+        if request.status != RequestStatus.approved:
+            session.delete(request)
+            deleted_requests += 1
+    
+    # Nettoyer les pipelines créés par cet utilisateur (garder les pipelines mais effacer created_by)
+    pipelines = session.exec(
+        select(Pipeline).where(Pipeline.created_by == user_to_delete.username)
+    ).all()
+    for pipeline in pipelines:
+        pipeline.created_by = ""
+        session.add(pipeline)
+    
+    # Supprimer l'utilisateur
+    session.delete(user_to_delete)
+    session.commit()
+    
+    return {
+        "ok": True,
+        "id": user_id,
+        "username": user_to_delete.username,
+        "deleted_role_requests": deleted_requests
+    }
 
 # ========================
 # ROLE REQUEST MANAGEMENT

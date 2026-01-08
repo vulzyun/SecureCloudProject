@@ -40,7 +40,9 @@ def get_current_user(
     email = ident["email"]
     username = ident["username"]
 
+    # Chercher l'utilisateur par email
     user = session.exec(select(User).where(User.email == email)).first()
+    
     if not user:
         # Rôle par défaut : viewer
         role = Role.viewer
@@ -50,19 +52,36 @@ def get_current_user(
            (settings.env == "dev" and email == "admin@test.com"):
             role = Role.admin
 
+        # Créer le nouvel utilisateur
         user = User(email=email, username=username, role=role)
         session.add(user)
-        session.commit()
-        session.refresh(user)
+        
+        try:
+            session.commit()
+            session.refresh(user)
+        except Exception as e:
+            # En cas de conflit (race condition), on cherche à nouveau l'utilisateur
+            session.rollback()
+            user = session.exec(select(User).where(User.email == email)).first()
+            if not user:
+                # Si l'utilisateur n'existe toujours pas, c'est une vraie erreur
+                print(f"Error creating user {email}: {str(e)}")
+                raise HTTPException(status_code=500, detail="Failed to create user")
     else:
-        # Si c'est l'admin bootstrap OU admin de dev, on s'assure que le rôle reste admin
+        # Si l'utilisateur existe, on s'assure que son rôle est correct
+        needs_update = False
+        
+        # Bootstrap admin OU admin de dev : forcer le rôle admin
         if (settings.bootstrap_admin_email and email.lower() == settings.bootstrap_admin_email.lower()) or \
            (settings.env == "dev" and email == "admin@test.com"):
             if user.role != Role.admin:
                 user.role = Role.admin
-                session.add(user)
-                session.commit()
-                session.refresh(user)
+                needs_update = True
+        
+        if needs_update:
+            session.add(user)
+            session.commit()
+            session.refresh(user)
 
     return user
 

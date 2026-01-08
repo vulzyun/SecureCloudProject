@@ -21,6 +21,10 @@ export default function AdminPanel() {
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<"viewer" | "dev" | "admin">("viewer");
 
+  // Delete user
+  const [deleteConfirmUserId, setDeleteConfirmUserId] = useState<number | null>(null);
+  const [deleteConfirmUsername, setDeleteConfirmUsername] = useState("");
+
   // -----------------------------
   // Pipelines
   // -----------------------------
@@ -154,6 +158,26 @@ export default function AdminPanel() {
       setActiveTab("users");
     } catch (e: any) {
       setError(e?.message || "Erreur lors de la création de l'utilisateur");
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: number) => {
+    setLoadingUsers(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const result = await userAPI.deleteUser(userId);
+      setSuccess(`Utilisateur ${result.username} supprimé avec succès (${result.deleted_role_requests} demande(s) de rôle supprimée(s))`);
+      setDeleteConfirmUserId(null);
+      setDeleteConfirmUsername("");
+      await loadUsers();
+    } catch (e: any) {
+      setError(e?.message || "Erreur lors de la suppression de l'utilisateur");
+      setDeleteConfirmUserId(null);
+      setDeleteConfirmUsername("");
     } finally {
       setLoadingUsers(false);
     }
@@ -399,6 +423,7 @@ export default function AdminPanel() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rôle</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date de création</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -421,6 +446,18 @@ export default function AdminPanel() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-500">{new Date(u.created_at).toLocaleDateString()}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        onClick={() => {
+                          setDeleteConfirmUserId(u.id);
+                          setDeleteConfirmUsername(u.username);
+                        }}
+                        disabled={loadingUsers}
+                        className="text-red-600 hover:text-red-900 disabled:opacity-50 font-medium"
+                      >
+                        Supprimer
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -654,6 +691,41 @@ export default function AdminPanel() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirmUserId !== null && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm mx-auto">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirmer la suppression</h3>
+            <p className="text-gray-600 mb-4">
+              Êtes-vous sûr de vouloir supprimer l&apos;utilisateur <strong>{deleteConfirmUsername}</strong> ?
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              Cette action supprimera également toutes les demandes de rôle en attente ou rejetées.
+              Les pipelines créés seront conservés.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setDeleteConfirmUserId(null);
+                  setDeleteConfirmUsername("");
+                }}
+                disabled={loadingUsers}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => handleDeleteUser(deleteConfirmUserId)}
+                disabled={loadingUsers}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg disabled:opacity-50"
+              >
+                {loadingUsers ? "Suppression..." : "Supprimer"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

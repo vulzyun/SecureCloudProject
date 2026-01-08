@@ -54,6 +54,12 @@ export const userAPI = {
       body: JSON.stringify({ role }),
     }),
 
+  deleteUser: (userId: number) =>
+    api<{ ok: boolean; id: number; username: string; deleted_role_requests: number }>(
+      `/api/admin/users/${userId}`,
+      { method: "DELETE" }
+    ),
+
   // ===== ROLE REQUESTS =====
   requestRole: (requestedRole: string) =>
     api<RoleRequest>("/api/users/me/request-role", {
