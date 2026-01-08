@@ -7,6 +7,9 @@ class Settings(BaseSettings):
 
     # si l'email match, on force ADMIN (pratique pour démarrer)
     bootstrap_admin_email: str | None = None
+    
+    # Token SonarCloud
+    sonar_token: str | None = None
 
     class Config:
         env_file = ".env"
