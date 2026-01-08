@@ -6,7 +6,7 @@ services:
     container_name: reverse-proxy
     restart: unless-stopped
     ports:
-      - "4180:80"
+      - "80:80"
     volumes:
       - ./nginx-proxy.conf:/etc/nginx/conf.d/default.conf:ro
     extra_hosts:
