@@ -121,15 +121,7 @@ def _docker_save_and_load_over_ssh(user: str, host: str, port: int, image_tag: s
     sudo docker save <image_tag> | ssh user@host "docker load"
     Returns output lines for real-time logging.
     Uses sudo locally for docker save, but not on remote (docker has permissions there).
-    
-    To test rollback, set FAIL_DOCKER_LOAD=1 environment variable to force this step to fail.
     """
-    import os
-    
-    # For testing: force failure if FAIL_DOCKER_LOAD env var is set
-    if os.getenv("FAIL_DOCKER_LOAD"):
-        raise RuntimeError("🧪 INTENTIONAL FAILURE AT docker load (testing rollback)")
-    
     # 1. Save Docker image to stdout (needs sudo locally)
     save = subprocess.Popen(
         ["sudo", "docker", "save", image_tag],
@@ -142,12 +134,12 @@ def _docker_save_and_load_over_ssh(user: str, host: str, port: int, image_tag: s
     load = subprocess.Popen(
         [
             "ssh",
-            "-p", str(9999),  # Invalid port to force failure for testing
+            "-p", str(port),
             "-o", "ServerAliveInterval=30",   # Keep-alive every 30s
             "-o", "ServerAliveCountMax=10",    # Max 10 retries
             "-o", "Compression=yes",           # Compress transfer
             "-o", "TCPKeepAlive=yes",          # TCP keep-alive
-            f"{user}@invalid-host.test",  # Invalid host to force failure for testing
+            f"{user}@{host}",
             "docker load"  
         ],
         stdin=save.stdout,
